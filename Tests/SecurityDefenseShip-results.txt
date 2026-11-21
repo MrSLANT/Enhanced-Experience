@@ -1,0 +1,13 @@
+START
+PASS automatic objectives installed
+Shuttle placed in range of powered coilgun
+PASS foreign shuttle is undamaged before aggression
+Applied hull damage attributed to the foreign crew
+idle/-; selected=-; damage=0.0
+operateweapons/operateweapons; selected=-; damage=0.0
+operateweapons/-; selected=periscope; damage=0.0
+operateweapons/operateweapons; selected=-; damage=0.0
+operateweapons/operateweapons; selected=periscope; damage=0.0
+operateweapons/operateweapons; selected=periscope; damage=20.0
+PASS automatic turret hits the shuttle after attributed hull damage
+COMPLETE

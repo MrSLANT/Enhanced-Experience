@@ -1,0 +1,14 @@
+START
+PASS automatic objectives installed
+Spawned spot has 3 unobstructed turret arc(s)
+idle/-/- selected=- enemyInside=false
+operateweapons/operateweapons/- selected=- enemyInside=false
+operateweapons/operateweapons/- selected=periscope enemyInside=false
+PASS officer takes an armed periscope and hits the exterior crawler
+operateweapons/idle; intruder aboard=false
+operateweapons/combat; intruder aboard=true
+operateweapons/fightintruders; intruder aboard=true
+PASS two officers split gunnery and intruder defense
+PASS direct Wait takes priority over gunnery
+PASS both officers return to ordinary tasks after threats are removed
+COMPLETE

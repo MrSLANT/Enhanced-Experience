@@ -27,10 +27,26 @@ namespace EnhancedExperience
         public void Initialize()
         {
             ExteriorFollow.Install(harmony);
+            SecurityDefense.InstallPatches(harmony);
+            harmony.Patch(
+                AccessTools.Method(typeof(AIObjectiveManager), nameof(AIObjectiveManager.CreateAutonomousObjectives)),
+                prefix: new HarmonyMethod(typeof(ExpeditionPlugin), nameof(PreserveMaintenancePatrol)),
+                postfix: new HarmonyMethod(typeof(ExpeditionPlugin), nameof(InstallCrewObjectives)));
             harmony.Patch(
                 AccessTools.Method(typeof(AIObjectiveManager), nameof(AIObjectiveManager.CreateObjective),
                     new[] { typeof(Order), typeof(float) }),
                 postfix: new HarmonyMethod(typeof(ExpeditionPlugin), nameof(ReplaceOrderObjective)));
+        }
+
+        private static void PreserveMaintenancePatrol(AIObjectiveManager __instance, out MaintenancePatrol __state) =>
+            __state = __instance.GetObjective<MaintenancePatrol>();
+
+        private static void InstallCrewObjectives(AIObjectiveManager __instance, Character ___character,
+            MaintenancePatrol __state)
+        {
+            CrewRepairPriorities.Install(__instance, ___character);
+            MaintenancePatrol.InstallForCrew(__instance, ___character, __state);
+            SecurityDefense.InstallForCrew(__instance, ___character);
         }
 
         private static void ReplaceOrderObjective(Order order, float priorityModifier, AIObjectiveManager __instance,
@@ -44,6 +60,15 @@ namespace EnhancedExperience
                 {
                     Identifier = order.Identifier,
                     IgnoreAtOutpost = cleanup.IgnoreAtOutpost
+                };
+            }
+            else if (__result is AIObjectiveDeconstructItems && order.Identifier.Value == "deconstructitems" &&
+                GameMain.NetworkMember == null && ___character.IsBot && MineralDeconstructionObjective.IsMechanic(___character))
+            {
+                __result = new MineralDeconstructionObjective(___character, __instance, priorityModifier)
+                {
+                    Identifier = order.Identifier,
+                    IgnoreAtOutpost = __result.IgnoreAtOutpost
                 };
             }
             else if (__result is AIObjectiveDeconstructItems && order.Identifier.Value == "deconstructitems" &&
@@ -80,11 +105,22 @@ namespace EnhancedExperience
             return true;
         }
 
-        public void OnLoadCompleted() { }
+        public void OnLoadCompleted()
+        {
+            // LuaCs may activate the plugin after the round has created its crew.
+            foreach (var crew in Character.CharacterList)
+            {
+                if (crew.AIController is HumanAIController ai)
+                {
+                    InstallCrewObjectives(ai.ObjectiveManager, crew, null);
+                }
+            }
+        }
         public void PreInitPatching() { }
         public void Dispose()
         {
             ExteriorFollow.Clear();
+            SecurityDefense.Clear();
             harmony.UnpatchSelf();
         }
     }

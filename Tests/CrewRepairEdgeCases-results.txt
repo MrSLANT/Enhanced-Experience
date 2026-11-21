@@ -1,0 +1,9 @@
+START
+Both electrical targets at 20%; reactor distance 0, junction distance 566, same hull: false
+PASS engineer begins an electrical repair
+Candidate reactor1: priority 13.10
+Candidate junctionbox: priority 9.34
+PASS reactor selected before junction box
+PASS oxygen emergency interrupts electrical repair
+PASS two engineers finish the shared target without duplicate assignment
+COMPLETE

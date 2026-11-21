@@ -9,30 +9,28 @@ using Microsoft.Xna.Framework;
 
 namespace EnhancedExperience
 {
-    internal sealed class MedicalDeconstructionObjective : AIObjectiveDeconstructItems
+    internal abstract class AutomaticDeconstructionObjective : AIObjectiveDeconstructItems
     {
-        private static readonly HashSet<Identifier> Allowed = new HashSet<Identifier>(new[]
-        {
-            "aquaticpoppy", "yeastshroom", "slimebacteria", "adrenalinegland", "swimbladder",
-            "smallmudraptoregg", "mucusball", "hallucinogenicbufotoxin", "oxygeniteshard",
-            "smallcrawleregg", "sulphuriteshard", "divingknifeunique"
-        }.Select(id => id.ToIdentifier()));
+        protected abstract bool IsAutomaticTarget(ItemPrefab prefab);
+        protected virtual bool DismissWhenEmpty => true;
+        protected virtual bool ReleaseCollectedItem => false;
 
-        private static readonly ConditionalWeakTable<Item, WeakReference<MedicalDeconstructionObjective>>
-            Claims = new ConditionalWeakTable<Item, WeakReference<MedicalDeconstructionObjective>>();
+        private static readonly ConditionalWeakTable<Item, WeakReference<AutomaticDeconstructionObjective>>
+            Claims = new ConditionalWeakTable<Item, WeakReference<AutomaticDeconstructionObjective>>();
 
         private readonly Dictionary<Item, double> retryAfter = new Dictionary<Item, double>();
         private (Item Item, Deconstructor Machine)? proposal;
         private Item target;
         private Deconstructor machine;
         private AIObjectiveGoTo route;
+        private Item routeDestination;
+        private bool collectedTarget;
         private double nextSearch;
         private double deadline;
 
-        public MedicalDeconstructionObjective(Character character, AIObjectiveManager manager, float priorityModifier)
+        protected AutomaticDeconstructionObjective(Character character, AIObjectiveManager manager, float priorityModifier)
             : base(character, manager, priorityModifier) { }
 
-        internal static bool IsAutomaticIngredient(Identifier id) => Allowed.Contains(id);
         private bool IsOrdered => objectiveManager.IsOrder(this);
         private bool CanWork => IsOrdered && IsAllowed && !character.IsIncapacitated &&
             !character.IsLowInOxygen && Safe(character.CurrentHull) &&
@@ -75,21 +73,22 @@ namespace EnhancedExperience
 
             if (target != null)
             {
-                if (Item.DeconstructItems.Contains(target) || !CanFetch(target))
+                if (Item.DeconstructItems.Contains(target) || !CanFetch(target) ||
+                    ReleaseCollectedItem && IsClaimed(target))
                 {
                     Release();
                 }
-                else if (!CanUse(machine, target))
+                else if (ReleaseCollectedItem ? IsClaimed(machine.Item) || !IsReady(machine) : !CanUse(machine, target))
                 {
                     Fail(machine.Item);
                 }
-                else if (route != null && CanReach(target.IsOwnedBy(character) ? machine.Item : Root(target)))
+                else if (route != null && (routeDestination != Destination || CanReach(Destination)))
                 {
-                    RemoveSubObjective(ref route);
+                    ClearRoute();
                 }
                 else if (now >= deadline || route?.Abandon == true)
                 {
-                    Fail(target.IsOwnedBy(character) ? machine.Item : target);
+                    Fail(ReleaseCollectedItem ? Destination : target.IsOwnedBy(character) ? machine.Item : target);
                 }
                 return;
             }
@@ -101,7 +100,7 @@ namespace EnhancedExperience
                 retryAfter.Remove(entry.Key);
             }
             proposal = FindWork();
-            if (proposal == null && !SubObjectives.Any() && !GetList().Any(IsValidTarget) &&
+            if (DismissWhenEmpty && proposal == null && !SubObjectives.Any() && !GetList().Any(IsValidTarget) &&
                 !GetIngredients().Any(item => CanFetch(item, requireCarrySlot: false)))
             {
                 MedicalCleanupObjective.DismissEmptyOrder(this);
@@ -126,15 +125,21 @@ namespace EnhancedExperience
                 deadline = Timing.TotalTimeUnpaused + 25;
             }
 
-            // A completed route can end short of actual interaction. Exclude this candidate
-            // temporarily instead of immediately starting the same path again.
+            if (ReleaseCollectedItem && (!CanFetch(target) || Item.DeconstructItems.Contains(target) ||
+                IsClaimed(target) || IsClaimed(machine.Item)))
+            {
+                Release();
+                return;
+            }
+
+            // A completed route can end short of actual interaction.
             if (route != null)
             {
-                bool canReach = CanReach(target.IsOwnedBy(character) ? machine.Item : Root(target));
-                RemoveSubObjective(ref route);
+                bool canReach = routeDestination != Destination || CanReach(Destination);
+                ClearRoute();
                 if (!canReach)
                 {
-                    Fail(target.IsOwnedBy(character) ? machine.Item : target);
+                    Fail(ReleaseCollectedItem ? Destination : target.IsOwnedBy(character) ? machine.Item : target);
                     return;
                 }
             }
@@ -154,6 +159,7 @@ namespace EnhancedExperience
                     Fail(target);
                     return;
                 }
+                collectedTarget = true;
                 deadline = Timing.TotalTimeUnpaused + 25;
             }
 
@@ -172,15 +178,22 @@ namespace EnhancedExperience
                 Fail(machine.Item);
                 return;
             }
-            if (input.AllItems.All(item => item == target))
+            if (target.ParentInventory == input && input.AllItems.All(item => item == target))
             {
                 machine.SetActive(active: true, user: character, createNetworkEvent: true);
+            }
+            else if (ReleaseCollectedItem)
+            {
+                if (target.ParentInventory == input) { target.Drop(character); }
+                Fail(machine.Item);
+                return;
             }
             Release();
         }
 
         private void GoTo(Item item)
         {
+            routeDestination = item;
             TryAddSubObjective(ref route, () => new AIObjectiveGoTo(item, character, objectiveManager,
                 repeat: false, getDivingGearIfNeeded: false, closeEnough: AIObjectiveGetItem.DefaultReach)
             {
@@ -200,8 +213,9 @@ namespace EnhancedExperience
             if (machines.Length == 0) { return null; }
 
             foreach (var item in GetIngredients()
-                .Distinct().Where(item => IsAutomaticIngredient(item.Prefab.Identifier) &&
-                    !Item.DeconstructItems.Contains(item) && !retryAfter.ContainsKey(item) && !IsClaimed(item) && CanFetch(item))
+                .Distinct().Where(item => !Item.DeconstructItems.Contains(item) && !retryAfter.ContainsKey(item) &&
+                    !IsClaimed(item) && CanFetch(item) &&
+                    (!ReleaseCollectedItem || item.IsOwnedBy(character) || !retryAfter.ContainsKey(Root(item))))
                 .OrderByDescending(item => item.IsOwnedBy(character))
                 .ThenBy(item => Vector2.DistanceSquared(character.WorldPosition, Root(item).WorldPosition))
                 .ThenBy(item => item.ID))
@@ -221,7 +235,7 @@ namespace EnhancedExperience
         private bool CanFetch(Item item, bool requireCarrySlot = true)
         {
             if (item.Removed || item.Condition <= 0 || item.OrderedToBeIgnored || !item.AllowDeconstruct ||
-                !IsAutomaticIngredient(item.Prefab.Identifier) || item.Illegitimate ||
+                !IsAutomaticTarget(item.Prefab) || item.Illegitimate ||
                 item.GetComponent<Pickable>() is not { CanBePicked: true, IsAttached: false } ||
                 item.GetRootInventoryOwner() is Character owner && owner != character)
             {
@@ -262,7 +276,7 @@ namespace EnhancedExperience
             return -1;
         }
 
-        private bool IsReady(Deconstructor device) =>
+        protected virtual bool IsReady(Deconstructor device) =>
             !device.Item.Removed && device.Item.Condition > 0 && device.Item.Submarine == character.Submarine &&
             device.Item.ParentInventory == null && Safe(device.Item.CurrentHull) && device.Item.HasAccess(character) &&
             device.HasRequiredItems(character, addMessage: false) && device.HasPower && !device.IsActive &&
@@ -270,7 +284,7 @@ namespace EnhancedExperience
             input.HasRequiredItems(character, addMessage: false) && !input.Inventory.AllItems.Any() &&
             device.OutputContainer is { } output && !output.Inventory.IsFull(takeStacksIntoAccount: true);
 
-        private static bool FitsRecipe(Deconstructor device, Item item)
+        protected virtual bool FitsRecipe(Deconstructor device, Item item)
         {
             float condition = item.Condition / item.MaxCondition;
             return device.InputContainer.Inventory.CanBePut(item) && item.Prefab.DeconstructItems.Any(recipe =>
@@ -279,17 +293,19 @@ namespace EnhancedExperience
         }
 
         private bool CanUse(Deconstructor device, Item item) => IsReady(device) && FitsRecipe(device, item);
+        private Item Destination => target.IsOwnedBy(character) ? machine.Item : Root(target);
         private static Item Root(Item item) => item.GetRootInventoryOwner() as Item ?? item;
         private bool CanReach(Item item) => character.CanInteractWith(item, checkLinked: false);
 
         private bool IsClaimed(Item item) => Claims.TryGetValue(item, out var claim) &&
             claim.TryGetTarget(out var other) && other != this && other.IsOrdered &&
+            (!other.ReleaseCollectedItem || other.CanWork && other.objectiveManager.CurrentObjective == other) &&
             (other.target == item || other.machine?.Item == item);
 
         private void Claim(Item item)
         {
             Claims.Remove(item);
-            Claims.Add(item, new WeakReference<MedicalDeconstructionObjective>(this));
+            Claims.Add(item, new WeakReference<AutomaticDeconstructionObjective>(this));
         }
 
         private void Fail(Item item)
@@ -307,13 +323,42 @@ namespace EnhancedExperience
             }
         }
 
+        private void ClearRoute()
+        {
+            RemoveSubObjective(ref route);
+            routeDestination = null;
+        }
+
         private void Release()
         {
             Unclaim(target);
             Unclaim(machine?.Item);
-            RemoveSubObjective(ref route);
+            ClearRoute();
+            if (ReleaseCollectedItem && collectedTarget && target is { Removed: false } &&
+                target.ParentInventory == character.Inventory && character.CurrentHull != null)
+            {
+                target.Drop(character);
+            }
+            collectedTarget = false;
             target = null;
             machine = null;
         }
+    }
+
+    internal sealed class MedicalDeconstructionObjective : AutomaticDeconstructionObjective
+    {
+        private static readonly HashSet<Identifier> Allowed = new HashSet<Identifier>(new[]
+        {
+            "aquaticpoppy", "yeastshroom", "slimebacteria", "adrenalinegland", "swimbladder",
+            "smallmudraptoregg", "mucusball", "hallucinogenicbufotoxin", "oxygeniteshard",
+            "smallcrawleregg", "sulphuriteshard", "divingknifeunique"
+        }.Select(id => id.ToIdentifier()));
+
+        public MedicalDeconstructionObjective(Character character, AIObjectiveManager manager, float priorityModifier)
+            : base(character, manager, priorityModifier) { }
+
+        internal static bool IsAutomaticIngredient(Identifier id) => Allowed.Contains(id);
+
+        protected override bool IsAutomaticTarget(ItemPrefab prefab) => IsAutomaticIngredient(prefab.Identifier);
     }
 }

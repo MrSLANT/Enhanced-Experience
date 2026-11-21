@@ -1,0 +1,13 @@
+START
+PASS automatic objectives installed
+Spawned spot has 2 unobstructed turret arc(s)
+idle/-/- selected=- enemyInside=false
+operateweapons/operateweapons/- selected=- enemyInside=false
+operateweapons/operateweapons/go to selected=- enemyInside=false
+operateweapons/-/- selected=periscope enemyInside=false
+operateweapons/operateweapons/go to selected=- enemyInside=false
+operateweapons/operateweapons/- selected=periscope enemyInside=false
+PASS officer takes an armed periscope and hits the exterior crawler
+PASS officer reloads the empty linked turret loader
+FAIL target leaves original arc and officer occupies a different periscope
+FAIL direct Railgun order takes control of its periscope

@@ -58,12 +58,53 @@ internal static class ExpeditionChecks
             .GetMethod("Organize", BindingFlags.Static | BindingFlags.NonPublic) != null);
         var deconstruction = plugin.GetType("EnhancedExperience.MedicalDeconstructionObjective", throwOnError: true);
         Check(side + " medical deconstruction objective loads",
-            deconstruction.BaseType.FullName == "Barotrauma.AIObjectiveDeconstructItems");
+            deconstruction.BaseType.BaseType.FullName == "Barotrauma.AIObjectiveDeconstructItems");
         VerifyDeconstruction(deconstruction, args[3]);
+        var mineral = plugin.GetType("EnhancedExperience.MineralDeconstructionObjective", throwOnError: true);
+        Check(side + " mechanic and doctor share the automatic deconstruction objective",
+            mineral.BaseType == deconstruction.BaseType);
+        VerifyVanillaMinerals(args[3]);
 
         var entry = plugin.GetType("EnhancedExperience.ExpeditionPlugin", throwOnError: true);
         var instance = Activator.CreateInstance(entry);
-        var factory = gameAssembly.GetType("Barotrauma.AIObjectiveManager", throwOnError: true).GetMethod("CreateObjective");
+        var objectiveManager = gameAssembly.GetType("Barotrauma.AIObjectiveManager", throwOnError: true);
+        var factory = objectiveManager.GetMethod("CreateObjective");
+        var autonomousFactory = objectiveManager.GetMethod("CreateAutonomousObjectives");
+        VerifyCrewRepairPriorities(plugin, objectiveManager, side);
+        var defense = plugin.GetType("EnhancedExperience.SecurityDefense", throwOnError: true);
+        const BindingFlags internalStatic = BindingFlags.Static | BindingFlags.NonPublic;
+        var slots = defense.GetMethod("IntruderSlots", internalStatic);
+        int Slots(int officers, int intruders, bool external) =>
+            (int)slots.Invoke(null, new object[] { officers, intruders, external });
+        Check(side + " security reserves an external officer and limits duplicate assignments",
+            Slots(1, 1, true) == 1 && Slots(2, 3, true) == 1 &&
+            Slots(3, 1, true) == 1 && Slots(3, 3, true) == 2 &&
+            Slots(3, 3, false) == 3 && Slots(3, 0, true) == 0);
+        var railgun = defense.GetMethod("IsRailgun", internalStatic);
+        var identifier = railgun.GetParameters()[0].ParameterType;
+        object Id(string value) => Activator.CreateInstance(identifier, new object[] { value });
+        bool IsRailgun(string prefab, string parent) =>
+            (bool)railgun.Invoke(null, new[] { Id(prefab), Id(parent) });
+        Check(side + " automatic turret selection excludes railguns and permits flak",
+            IsRailgun("railgun", "") && IsRailgun("legacyrailgun", "") &&
+            IsRailgun("custom_variant", "railgun") && !IsRailgun("flakcannon", "") &&
+            !IsRailgun("coilgun", ""));
+
+        var turret = gameAssembly.GetType("Barotrauma.Items.Components.Turret", throwOnError: true);
+        var turretOperation = turret.GetMethod("CrewAIOperate");
+        var turretLaunch = turret.GetMethod("TryLaunch", BindingFlags.Instance | BindingFlags.NonPublic);
+        var structure = gameAssembly.GetType("Barotrauma.Structure", throwOnError: true);
+        var character = gameAssembly.GetType("Barotrauma.Character", throwOnError: true);
+        var hullDamage = structure.GetMethod("AddDamage",
+            new[] { typeof(int), typeof(float), character, typeof(bool), typeof(bool) });
+        var defenseTargets = new[] { turretOperation, turretLaunch, hullDamage };
+        var patrol = plugin.GetType("EnhancedExperience.MaintenancePatrol", throwOnError: true);
+        var needsService = patrol.GetMethod("NeedsService", BindingFlags.Static | BindingFlags.NonPublic);
+        Check(side + " maintenance charge threshold includes 0%, 50% and 90%",
+            new[] { 0f, 50f, 90f }.All(charge => (bool)needsService.Invoke(null, new object[] { charge })));
+        Check(side + " maintenance charge threshold excludes charge above 90% and invalid values",
+            new[] { 90.001f, 91f, 100f, -1f, float.NaN }
+                .All(charge => !(bool)needsService.Invoke(null, new object[] { charge })));
         var patchInfo = Assembly.Load("0Harmony").GetType("HarmonyLib.Harmony", throwOnError: true).GetMethod("GetPatchInfo");
         var escortMethods = new (string Type, string Method)[]
         {
@@ -95,14 +136,41 @@ internal static class ExpeditionChecks
         {
             entry.GetMethod("Initialize").Invoke(instance, null);
             Check(side + " factory patch", IsPatched(factory));
+            Check(side + " crew autonomy patch", IsPatched(autonomousFactory));
             Check(side + " escort patches", escortTargets.All(IsPatched));
+            Check(side + " security targeting and hull-damage patches", defenseTargets.All(IsPatched));
         }
         finally
         {
             entry.GetMethod("Dispose").Invoke(instance, null);
         }
         Check(side + " factory unpatch", !IsPatched(factory));
+        Check(side + " crew autonomy unpatch", !IsPatched(autonomousFactory));
         Check(side + " escort unpatch", !escortTargets.Any(IsPatched));
+        Check(side + " security unpatch", !defenseTargets.Any(IsPatched));
+    }
+
+    private static void VerifyCrewRepairPriorities(Assembly plugin, Type manager, string side)
+    {
+        var priorities = plugin.GetType("EnhancedExperience.CrewRepairPriorities", throwOnError: true);
+        var selectPriority = priorities.GetMethod("SelectPriority", BindingFlags.Static | BindingFlags.NonPublic);
+        float Priority(bool targets, bool order, bool leaks) =>
+            (float)selectPriority.Invoke(null, new object[] { targets, order, leaks });
+        var orderFloor = (float)manager.GetField("LowestOrderPriority").GetRawConstantValue();
+        var emergencyPriority = (float)manager.GetField("EmergencyObjectivePriority").GetRawConstantValue();
+        var leaksPriority = Priority(true, false, true);
+        var repairPriority = Priority(true, false, false);
+        Check(side + " crew repair priority hierarchy",
+            repairPriority > orderFloor - 1f && leaksPriority > repairPriority &&
+            leaksPriority < orderFloor && leaksPriority < emergencyPriority);
+        Check(side + " crew repair yields to active orders and falls back without targets",
+            Priority(true, true, true) == 0f && Priority(true, true, false) == 0f &&
+            Priority(false, false, true) == 0f && Priority(false, false, false) == 0f);
+        Check(side + " crew repair uses native leak and equipment objectives",
+            priorities.GetNestedType("AutoFixLeaks", BindingFlags.NonPublic).BaseType.FullName ==
+                "Barotrauma.AIObjectiveFixLeaks" &&
+            priorities.GetNestedType("AutoRepairSystems", BindingFlags.NonPublic).BaseType.FullName ==
+                "Barotrauma.AIObjectiveRepairItems");
     }
 
     private static void VerifyDeconstruction(Type objective, string installedGame)
@@ -142,4 +210,43 @@ internal static class ExpeditionChecks
             Check(entry.Key + " installed recipe", data.Length == 1 && string.Join(",", output) == entry.Value);
         }
     }
+
+    private static void VerifyVanillaMinerals(string installedGame)
+    {
+        var items = Directory.EnumerateFiles(Path.Combine(installedGame, "Content", "Items"), "*.xml",
+                SearchOption.AllDirectories)
+            .SelectMany(file => XDocument.Load(file).Descendants())
+            .Where(item => item.Attribute("identifier") != null &&
+                (item.Attribute("category") != null || item.Attribute("variantof") != null))
+            .ToArray();
+        var minerals = items.Where(item => Tokens(item, "tags").Contains("ore") ||
+            (string)item.Attribute("identifier") is "oxygeniteshard" or "sulphuriteshard").ToArray();
+        var medicalInputs = items.SelectMany(item => item.Elements().Where(recipe =>
+                recipe.Name.LocalName.ToLowerInvariant() is ("fabricate" or "fabricable" or "fabricableitem") &&
+                (Tokens(item, "category").Contains("medical") || Tokens(item, "tags").Overlaps(new[] { "medical", "poison" }) ||
+                 Tokens(recipe, "suitablefabricators").Contains("medicalfabricator") ||
+                 recipe.Elements("RequiredSkill").Any(skill => (string)skill.Attribute("identifier") == "medical"))))
+            .SelectMany(recipe => recipe.Elements("RequiredItem"))
+            .Select(item => (string)item.Attribute("identifier"))
+            .ToHashSet();
+        medicalInputs.UnionWith(new[] { "oxygeniteshard", "sulphuriteshard" });
+
+        var processable = minerals.Where(item => item.Elements("Deconstruct").Elements("Item")
+                .Any(product => product.Attribute("requiredotheritem") == null))
+            .Select(item => (string)item.Attribute("identifier")).ToHashSet();
+        Check("All 28 vanilla ore recipes remain available for automatic processing",
+            processable.Except(medicalInputs).ToHashSet().SetEquals(
+                ("amblygonite aragonite bornite brockite cassiterite chalcopyrite chamosite chrysoprase cryolite diamond " +
+                 "esperite galena graphite hydroxyapatite ilmenite ironore langbeinite lazulite polyhalite pyromorphite " +
+                 "quartz sphalerite stannite sylvite thorianite titanite triphylite uraniumore").Split(' ')));
+        var protectedMinerals = minerals.Select(item => (string)item.Attribute("identifier"))
+            .Where(medicalInputs.Contains).ToHashSet();
+        Check("Vanilla medical minerals and shards (" + string.Join(", ", protectedMinerals.Order()) + ")",
+            protectedMinerals.SetEquals(new[] { "dementonite", "fulgurium", "oxygeniteshard", "paralyxis", "sulphuriteshard" }));
+    }
+
+    private static HashSet<string> Tokens(XElement element, string attribute) =>
+        (element.Attributes().FirstOrDefault(entry => entry.Name.LocalName.Equals(attribute,
+            StringComparison.OrdinalIgnoreCase))?.Value ?? "").Split(',', StringSplitOptions.TrimEntries)
+        .ToHashSet(StringComparer.OrdinalIgnoreCase);
 }

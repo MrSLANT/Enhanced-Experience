@@ -1,0 +1,9 @@
+START
+PASS engineer and mechanic select their specialist tasks
+Opened leak 367/0
+PASS new leak interrupts mechanical repair
+PASS direct Wait interrupts leak repair
+PASS assistant takes the open leak after dismissal
+PASS leak is closed and assistant resumes other tasks
+PASS electrical and mechanical fixtures reach full condition
+COMPLETE

@@ -1,0 +1,4 @@
+START
+PASS automatic objectives installed
+PASS direct Railgun order takes control of its periscope
+COMPLETE
