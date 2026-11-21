@@ -1,0 +1,12 @@
+Quickstart fixture: RUNNING
+Patched order instantiated in game: PASS (prepareforexpedition (Partial))
+PUCS equipped in dry submarine: PASS
+Dry-sub pickup from floor, dressing and complete kit: FAIL (prepareforexpedition (Partial), bot=Mechanic, worn=pucs, free=8, spare=2, installed=2, pucs=1, oxygenitetank=2, oxygentank=2, plasmacutter=1, underwaterscooter=1, antibleeding2=2, antibloodloss2=1, antidama1=1)
+Crate fixture for independent fire and depth cases: PASS (prepareforexpedition (Ready), bot=Mechanic, worn=pucs, free=8, spare=2, installed=2, pucs=1, oxygenitetank=2, oxygentank=2, plasmacutter=1, underwaterscooter=1, antibleeding2=2, antibloodloss2=1, antidama1=1)
+Fire emergency takes priority: PASS (find safety)
+Completes the missing supply after fire is removed: PASS (prepareforexpedition (Ready), bot=Mechanic, worn=pucs, free=8, spare=2, installed=2, pucs=1, oxygenitetank=2, oxygentank=2, plasmacutter=1, underwaterscooter=1, antibleeding2=2, antibloodloss2=1, antidama1=1)
+Simulated 6300 m: PUCS remains worn but pressure is unsafe: FAIL (prepareforexpedition (Ready), bot=Mechanic, worn=pucs, free=8, spare=2, installed=2, pucs=1, oxygenitetank=2, oxygentank=2, plasmacutter=1, underwaterscooter=1, antibleeding2=2, antibloodloss2=1, antidama1=1)
+Live flooding gate: NOT TESTED (LocalMods/Enhanced Experience/Tests/ExpeditionQuickstart.lua:(182,28-33): LocalMods/Enhanced Experience/Tests/ExpeditionQuickstart.lua:(171,12-49): cannot access field AbyssAllowed of userdata<Barotrauma.AIObjective>)
+Simulated 6800 m: worn Abyss does not confer readiness: FAIL (prepareforexpedition (Ready), bot=Mechanic, worn=pucs, free=10, spare=2, installed=2, pucs=1, oxygenitetank=2, oxygentank=2, plasmacutter=1, underwaterscooter=1, antibleeding2=2, antibloodloss2=1, antidama1=1)
+Dismissal removes expedition order: PASS
+findweapon factory remains vanilla: PASS (findweapon)

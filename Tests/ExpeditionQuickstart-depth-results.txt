@@ -1,0 +1,9 @@
+Quickstart fixture: RUNNING
+Simulated 6300 m: PUCS remains worn but pressure is unsafe: PASS (depth=6300.00 m, prepareforexpedition (PressureUnsafe), bot=Mechanic, worn=pucs, free=8, spare=2, installed=2, pucs=1, oxygenitetank=2, oxygentank=2, plasmacutter=1, underwaterscooter=1, antibleeding2=2, antibloodloss2=1, antidama1=1)
+Simulated depth 6499 m, volume-weighted flooding 80.1000%: PASS
+Simulated depth 6500 m, volume-weighted flooding 79.0000%: PASS
+Simulated depth 6500 m, volume-weighted flooding 80.1000%: PASS
+Abyss plan of 6501 m applied: PASS
+Simulated 6800 m: worn Abyss does not confer readiness: PASS (depth=6800.00 m, prepareforexpedition (PressureUnsafe), bot=Mechanic, worn=abyssdivingsuit, free=8, spare=2, installed=2, pucs=0, oxygenitetank=1, oxygentank=3, plasmacutter=1, underwaterscooter=1, antibleeding2=2, antibloodloss2=1, antidama1=1)
+Dismissal removes expedition order: PASS
+findweapon factory remains vanilla: PASS (findweapon)

@@ -1,0 +1,25 @@
+Fixture: RUNNING
+Doctor receives medical deconstruction: PASS
+Other job receives vanilla deconstruction: PASS
+Repeated command leaves one objective: PASS
+Occupied input is not started automatically: PASS
+Unpowered deconstructor is skipped: PASS
+Automatic aquaticpoppy: PASS
+Automatic yeastshroom: PASS
+Automatic slimebacteria: PASS
+Automatic adrenalinegland: PASS
+Automatic swimbladder: PASS
+Automatic smallmudraptoregg: PASS
+Automatic mucusball: PASS
+Automatic hallucinogenicbufotoxin: PASS
+Automatic oxygeniteshard: PASS
+Automatic smallcrawleregg: PASS
+Automatic sulphuriteshard: PASS
+Automatic divingknifeunique: PASS
+Finished medicines and poisons preserved: PASS
+Foreign inventory untouched: PASS
+Native deconstructor produced output: PASS (new opium observed=3)
+Ingredient added later is processed: PASS
+Player-marked non-whitelisted item is processed: PASS
+Dismissal stops automatic collection: PASS (removed=false, owner=Metal Crate)
+Fixture complete: PASS
