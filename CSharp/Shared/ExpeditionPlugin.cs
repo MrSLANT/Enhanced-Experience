@@ -26,6 +26,7 @@ namespace EnhancedExperience
 
         public void Initialize()
         {
+            ExteriorFollow.Install(harmony);
             harmony.Patch(
                 AccessTools.Method(typeof(AIObjectiveManager), nameof(AIObjectiveManager.CreateObjective),
                     new[] { typeof(Order), typeof(float) }),
@@ -81,6 +82,10 @@ namespace EnhancedExperience
 
         public void OnLoadCompleted() { }
         public void PreInitPatching() { }
-        public void Dispose() => harmony.UnpatchSelf();
+        public void Dispose()
+        {
+            ExteriorFollow.Clear();
+            harmony.UnpatchSelf();
+        }
     }
 }

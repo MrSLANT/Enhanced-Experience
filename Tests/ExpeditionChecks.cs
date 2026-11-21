@@ -65,9 +65,28 @@ internal static class ExpeditionChecks
         var instance = Activator.CreateInstance(entry);
         var factory = gameAssembly.GetType("Barotrauma.AIObjectiveManager", throwOnError: true).GetMethod("CreateObjective");
         var patchInfo = Assembly.Load("0Harmony").GetType("HarmonyLib.Harmony", throwOnError: true).GetMethod("GetPatchInfo");
-        bool IsPatched()
+        var escortMethods = new (string Type, string Method)[]
         {
-            var info = patchInfo.Invoke(null, new object[] { factory });
+            ("HumanAIController", "Update"),
+            ("HumanAIController", "SpotEnemies"),
+            ("AIObjective", "OnDeselected"),
+            ("AIObjectiveGoTo", "Act"),
+            ("AIObjectiveGoTo", "get_CloseEnough"),
+            ("AIObjectiveCombat", "GetPriority"),
+            ("AIObjectiveFindSafety", "GetPriority"),
+            ("Items.Components.Holdable", "Pick"),
+            ("Items.Components.RepairTool", "FixBody"),
+            ("Items.Components.RepairTool", "Repair")
+        };
+        const BindingFlags declaredInstance = BindingFlags.Instance | BindingFlags.DeclaredOnly |
+            BindingFlags.Public | BindingFlags.NonPublic;
+        var escortTargets = escortMethods.Select(target =>
+            gameAssembly.GetType("Barotrauma." + target.Type, throwOnError: true)
+                .GetMethod(target.Method, declaredInstance) ??
+                    throw new InvalidOperationException("Missing escort target " + target)).ToArray();
+        bool IsPatched(MethodInfo method)
+        {
+            var info = patchInfo.Invoke(null, new object[] { method });
             if (info == null) { return false; }
             var owners = (System.Collections.Generic.IEnumerable<string>)info.GetType().GetProperty("Owners").GetValue(info);
             return owners.Contains("EnhancedExperience.PrepareForExpedition");
@@ -75,13 +94,15 @@ internal static class ExpeditionChecks
         try
         {
             entry.GetMethod("Initialize").Invoke(instance, null);
-            Check(side + " factory patch", IsPatched());
+            Check(side + " factory patch", IsPatched(factory));
+            Check(side + " escort patches", escortTargets.All(IsPatched));
         }
         finally
         {
             entry.GetMethod("Dispose").Invoke(instance, null);
         }
-        Check(side + " factory unpatch", !IsPatched());
+        Check(side + " factory unpatch", !IsPatched(factory));
+        Check(side + " escort unpatch", !escortTargets.Any(IsPatched));
     }
 
     private static void VerifyDeconstruction(Type objective, string installedGame)

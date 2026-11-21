@@ -2,6 +2,7 @@
 <contentpackage name="Enhanced Experience" modversion="0.1.0" corepackage="false" gameversion="1.13.5.0">
   <Other file="%ModDir%/ModConfig.xml" />
   <Other file="%ModDir%/CSharp/Shared/ExpeditionPlugin.cs" />
+  <Other file="%ModDir%/CSharp/Shared/ExteriorFollow.cs" />
   <Other file="%ModDir%/CSharp/Shared/AIObjectivePrepareForExpedition.cs" />
   <Other file="%ModDir%/CSharp/Shared/ExpeditionPolicy.cs" />
   <Other file="%ModDir%/CSharp/Shared/MedicalCleanupObjective.cs" />
