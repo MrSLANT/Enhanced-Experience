@@ -99,6 +99,7 @@ namespace EnhancedExperience
             {
                 escort?.Stop();
                 Escorts.Remove(bot);
+                ExpeditionInventory.Begin(bot);
                 escort = new Escort(bot, follow, __instance);
                 Escorts.Add(bot, escort);
             }
@@ -419,8 +420,7 @@ namespace EnhancedExperience
                     Observe(plant, plants: true, Now);
                 }
                 else if (Activities.TryGetValue(leader, out Activity activity) &&
-                    activity.Time + ActivityGrace > Now && activity.Time >= ignoreActivityBefore &&
-                    activity.Time >= activityUntil - ActivityGrace)
+                    activity.Time + ActivityGrace > Now && activity.Time >= ignoreActivityBefore)
                 {
                     Observe(activity.Item, activity.Plants, activity.Time);
                 }
@@ -433,7 +433,7 @@ namespace EnhancedExperience
 
                 if (Resource == null)
                 {
-                    if (Now >= activityUntil || Now < scanResources) { return false; }
+                    if (Now < scanResources) { return false; }
                     scanResources = Now + 1;
                     if (!harvestPlants && FindCutter() == null &&
                         (FindCutter(allowEmpty: true) == null || SpareCutterFuel() == null)) { return false; }
@@ -536,6 +536,7 @@ namespace EnhancedExperience
                 harvestPlants = plants;
                 playerResource = item;
                 activityUntil = when + ActivityGrace;
+                scanResources = Math.Min(scanResources, when + 0.5);
             }
 
             private static bool OutsideResource(Item item) =>

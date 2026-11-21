@@ -253,6 +253,7 @@ namespace EnhancedExperience
 
         protected override void Act(float deltaTime)
         {
+            ExpeditionInventory.Begin(character);
             double now = Timing.TotalTime;
             if (target != null)
             {
@@ -501,11 +502,17 @@ namespace EnhancedExperience
                 CancelAttempt(exclude: false);
                 return;
             }
+            var source = target.ParentInventory as ItemInventory;
+            bool wasCarried = target.IsOwnedBy(character);
             bool success = CanWork() && CanUse(target) && CanReach(target) &&
                 (target.IsOwnedBy(character) || CanTake(target)) &&
                 (recipient == null || recipient.IsOwnedBy(character) && CanUse(recipient)) &&
                 (!equipSuit || ShouldEquip(target)) &&
                 Transfer(target, recipient, equipSuit);
+            if (success && !wasCarried)
+            {
+                ExpeditionInventory.RecordPickup(character, target, source);
+            }
             CancelAttempt(exclude: !success);
         }
 

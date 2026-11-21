@@ -52,6 +52,9 @@ internal static class ExpeditionChecks
         var plugin = AssemblyLoadContext.Default.LoadFromAssemblyPath(pluginPath);
         var objective = plugin.GetType("EnhancedExperience.AIObjectivePrepareForExpedition", throwOnError: true);
         Check(side + " objective loads", objective.BaseType.FullName == "Barotrauma.AIObjective");
+        var expeditionReturn = plugin.GetType("EnhancedExperience.ExpeditionReturn", throwOnError: true);
+        Check(side + " expedition return extends stock navigation",
+            expeditionReturn.BaseType.FullName == "Barotrauma.AIObjectiveReturn");
         var medical = plugin.GetType("EnhancedExperience.MedicalCleanupObjective", throwOnError: true);
         Check(side + " medical cleanup objective loads", medical.BaseType.FullName == "Barotrauma.AIObjectiveCleanupItems");
         Check(side + " cabinet organizer loads", plugin.GetType("EnhancedExperience.MedicalCabinetOrganizer", throwOnError: true)
@@ -67,8 +70,12 @@ internal static class ExpeditionChecks
 
         var entry = plugin.GetType("EnhancedExperience.ExpeditionPlugin", throwOnError: true);
         var instance = Activator.CreateInstance(entry);
+        Check(side + " stock order dismissal can be called",
+            entry.GetField("DismissOrder", BindingFlags.Static | BindingFlags.NonPublic).GetValue(null) is Delegate);
         var objectiveManager = gameAssembly.GetType("Barotrauma.AIObjectiveManager", throwOnError: true);
         var factory = objectiveManager.GetMethod("CreateObjective");
+        var setOrder = objectiveManager.GetMethod("SetOrder",
+            new[] { gameAssembly.GetType("Barotrauma.Order", throwOnError: true), typeof(bool) });
         var autonomousFactory = objectiveManager.GetMethod("CreateAutonomousObjectives");
         VerifyCrewRepairPriorities(plugin, objectiveManager, side);
         var defense = plugin.GetType("EnhancedExperience.SecurityDefense", throwOnError: true);
@@ -125,6 +132,8 @@ internal static class ExpeditionChecks
             gameAssembly.GetType("Barotrauma." + target.Type, throwOnError: true)
                 .GetMethod(target.Method, declaredInstance) ??
                     throw new InvalidOperationException("Missing escort target " + target)).ToArray();
+        var inventoryPut = gameAssembly.GetType("Barotrauma.Inventory", throwOnError: true)
+            .GetMethod("PutItem", declaredInstance);
         bool IsPatched(MethodInfo method)
         {
             var info = patchInfo.Invoke(null, new object[] { method });
@@ -136,8 +145,10 @@ internal static class ExpeditionChecks
         {
             entry.GetMethod("Initialize").Invoke(instance, null);
             Check(side + " factory patch", IsPatched(factory));
+            Check(side + " Return order transition patch", IsPatched(setOrder));
             Check(side + " crew autonomy patch", IsPatched(autonomousFactory));
             Check(side + " escort patches", escortTargets.All(IsPatched));
+            Check(side + " expedition acquisition tracking patch", IsPatched(inventoryPut));
             Check(side + " security targeting and hull-damage patches", defenseTargets.All(IsPatched));
         }
         finally
@@ -145,8 +156,10 @@ internal static class ExpeditionChecks
             entry.GetMethod("Dispose").Invoke(instance, null);
         }
         Check(side + " factory unpatch", !IsPatched(factory));
+        Check(side + " Return order transition unpatch", !IsPatched(setOrder));
         Check(side + " crew autonomy unpatch", !IsPatched(autonomousFactory));
         Check(side + " escort unpatch", !escortTargets.Any(IsPatched));
+        Check(side + " expedition acquisition tracking unpatch", !IsPatched(inventoryPut));
         Check(side + " security unpatch", !defenseTargets.Any(IsPatched));
     }
 

@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using Barotrauma;
 using Barotrauma.LuaCs;
@@ -23,11 +24,15 @@ namespace EnhancedExperience
     public sealed class ExpeditionPlugin : IAssemblyPlugin
     {
         private readonly Harmony harmony = new Harmony("EnhancedExperience.PrepareForExpedition");
+        internal static readonly Action<AIObjectiveManager, Order> DismissOrder =
+            AccessTools.MethodDelegate<Action<AIObjectiveManager, Order>>(
+                AccessTools.Method(typeof(AIObjectiveManager), "DismissSelf", new[] { typeof(Order) }));
 
         public void Initialize()
         {
             ExteriorFollow.Install(harmony);
             SecurityDefense.InstallPatches(harmony);
+            ExpeditionInventory.Install(harmony);
             harmony.Patch(
                 AccessTools.Method(typeof(AIObjectiveManager), nameof(AIObjectiveManager.CreateAutonomousObjectives)),
                 prefix: new HarmonyMethod(typeof(ExpeditionPlugin), nameof(PreserveMaintenancePatrol)),
@@ -36,6 +41,25 @@ namespace EnhancedExperience
                 AccessTools.Method(typeof(AIObjectiveManager), nameof(AIObjectiveManager.CreateObjective),
                     new[] { typeof(Order), typeof(float) }),
                 postfix: new HarmonyMethod(typeof(ExpeditionPlugin), nameof(ReplaceOrderObjective)));
+            harmony.Patch(
+                AccessTools.Method(typeof(AIObjectiveManager), nameof(AIObjectiveManager.SetOrder),
+                    new[] { typeof(Order), typeof(bool) }),
+                postfix: new HarmonyMethod(typeof(ExpeditionPlugin), nameof(DismissExpeditionOrders)));
+        }
+
+        private static void DismissExpeditionOrders(AIObjectiveManager __instance, Character ___character, Order order)
+        {
+            if (GameMain.NetworkMember?.IsClient == true || !___character.IsBot || ___character.IsDead ||
+                order?.Identifier.Value != "return" ||
+                !__instance.CurrentOrders.Any(current =>
+                    current.MatchesOrder(order) && current.Objective is AIObjectiveReturn)) { return; }
+
+            // Native dismissal updates the order list and can reenter SetOrder.
+            foreach (var previous in __instance.CurrentOrders.Where(current =>
+                current.Identifier.Value is "prepareforexpedition" or "follow").ToArray())
+            {
+                DismissOrder(__instance, previous);
+            }
         }
 
         private static void PreserveMaintenancePatrol(AIObjectiveManager __instance, out MaintenancePatrol __state) =>
@@ -75,6 +99,15 @@ namespace EnhancedExperience
                 ___character.IsBot && MedicalCleanupObjective.IsDoctor(___character))
             {
                 __result = new MedicalDeconstructionObjective(___character, __instance, priorityModifier)
+                {
+                    Identifier = order.Identifier,
+                    IgnoreAtOutpost = __result.IgnoreAtOutpost
+                };
+            }
+            else if (__result is AIObjectiveReturn { Target: not null } && ___character.IsBot &&
+                ExpeditionInventory.Get(___character) is { } expedition)
+            {
+                __result = new ExpeditionReturn(___character, __instance, order, priorityModifier, expedition)
                 {
                     Identifier = order.Identifier,
                     IgnoreAtOutpost = __result.IgnoreAtOutpost
@@ -121,6 +154,7 @@ namespace EnhancedExperience
         {
             ExteriorFollow.Clear();
             SecurityDefense.Clear();
+            ExpeditionInventory.Clear();
             harmony.UnpatchSelf();
         }
     }

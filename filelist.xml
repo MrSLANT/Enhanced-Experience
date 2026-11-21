@@ -5,6 +5,7 @@
   <Other file="%ModDir%/CSharp/Shared/ExteriorFollow.cs" />
   <Other file="%ModDir%/CSharp/Shared/AIObjectivePrepareForExpedition.cs" />
   <Other file="%ModDir%/CSharp/Shared/ExpeditionPolicy.cs" />
+  <Other file="%ModDir%/CSharp/Shared/ExpeditionReturn.cs" />
   <Other file="%ModDir%/CSharp/Shared/MedicalCleanupObjective.cs" />
   <Other file="%ModDir%/CSharp/Shared/MedicalCabinetOrganizer.cs" />
   <Other file="%ModDir%/CSharp/Shared/MedicalDeconstructionObjective.cs" />
