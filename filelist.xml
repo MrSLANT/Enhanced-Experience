@@ -8,8 +8,7 @@
   <Other file="%ModDir%/CSharp/Shared/ExpeditionReturn.cs" />
   <Other file="%ModDir%/CSharp/Shared/MedicalCleanupObjective.cs" />
   <Other file="%ModDir%/CSharp/Shared/MedicalCabinetOrganizer.cs" />
-  <Other file="%ModDir%/CSharp/Shared/MedicalDeconstructionObjective.cs" />
-  <Other file="%ModDir%/CSharp/Shared/MineralDeconstructionObjective.cs" />
+  <Other file="%ModDir%/CSharp/Shared/CrewDeconstructionObjective.cs" />
   <Other file="%ModDir%/CSharp/Shared/MaintenancePatrol.cs" />
   <Other file="%ModDir%/CSharp/Shared/CrewRepairPriorities.cs" />
   <Other file="%ModDir%/CSharp/Shared/SecurityDefense.cs" />

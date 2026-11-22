@@ -1,0 +1,9 @@
+expedition (Dugong): PASS - scenario completed
+Quickstart fixture: RUNNING
+Patched order instantiated in game: PASS (prepareforexpedition (Partial))
+PUCS equipped in dry submarine: PASS
+Dry-sub pickup from crate, dressing and complete kit: PASS (prepareforexpedition (Ready), bot=Mechanic, worn=pucs, free=8, spare=2, installed=2, cutterLoad=oxygenitetank=100%, scooterLoad=batterycell=100%, pucs=1, oxygenitetank=2, oxygentank=2, plasmacutter=1, underwaterscooter=1, antibleeding2=2, antibloodloss2=1, antidama1=1)
+Repeat order recognizes existing kit: PASS (prepareforexpedition (Ready), bot=Mechanic, worn=pucs, free=8, spare=2, installed=2, cutterLoad=oxygenitetank=100%, scooterLoad=batterycell=100%, pucs=1, oxygenitetank=2, oxygentank=2, plasmacutter=1, underwaterscooter=1, antibleeding2=2, antibloodloss2=1, antidama1=1)
+One removed medicine is replenished: PASS (prepareforexpedition (Ready), bot=Mechanic, worn=pucs, free=8, spare=2, installed=2, cutterLoad=oxygenitetank=100%, scooterLoad=batterycell=100%, pucs=1, oxygenitetank=2, oxygentank=2, plasmacutter=1, underwaterscooter=1, antibleeding2=2, antibloodloss2=1, antidama1=1)
+Dismissal removes expedition order: PASS
+findweapon factory remains vanilla: PASS (findweapon)

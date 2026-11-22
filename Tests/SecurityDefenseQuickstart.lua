@@ -20,10 +20,11 @@ local resultFile = shipTest and "SecurityDefenseShip-results.txt" or
     extended and "SecurityDefenseExtended-results.txt" or "SecurityDefenseQuickstart-results.txt"
 
 local lines = {}
+local writeResult = EnhancedExperienceQuickstartWriteResult or File.Write
 local function log(message)
     lines[#lines + 1] = message
     print("[Security defense] " .. message)
-    File.Write("LocalMods/Enhanced Experience/Tests/" .. resultFile,
+    writeResult("LocalMods/Enhanced Experience/Tests/" .. resultFile,
         table.concat(lines, "\n") .. "\n")
 end
 local function guarded(callback)
@@ -76,9 +77,14 @@ later(500, function()
     for item in Item.ItemList do
         if item.Submarine == submarine then
             local turret = item.GetComponentString("Turret")
-            if turret and item.Condition > 0 then
+            if turret and item.Condition > 0 and not item.HasTag(Identifier("hardpoint")) then
                 if item.Prefab.Identifier.Value == "railgun" then railgun = turret
-                else stations[#stations + 1] = turret end
+                else
+                    local controller = item.FindController()
+                    if controller and controller.Item.HasTag(Identifier("periscope")) then
+                        stations[#stations + 1] = turret
+                    end
+                end
             end
         end
     end
@@ -89,11 +95,11 @@ later(500, function()
             onComplete()
             return
         end
-        local controller = railgun.Item.FindController()
         LuaUserData.RegisterType("Barotrauma.Order")
         local newOrder = LuaUserData.CreateStatic("Barotrauma.Order", true)
         local order = newOrder(OrderPrefab.Prefabs[Identifier("operateweapons")],
             railgun.Item, railgun, Character.Controlled, false).WithManualPriority(3)
+        local controller = assert(order.ConnectedController, "Railgun order has no compatible periscope")
         security.SetOrder(order, true, false, true)
         local function finish()
             security.SetOrder(order.GetDismissal(), true, false, true)
@@ -101,7 +107,9 @@ later(500, function()
         end
         await("direct Railgun order takes control of its periscope", function()
             if maintainTarget then maintainTarget() end
-            return active(security) == "operateweapons" and security.SelectedItem == controller.Item
+            local ai = manager(security)
+            return ai.CurrentOrder ~= nil and ai.CurrentObjective == ai.CurrentOrder and
+                security.SelectedItem == controller.Item
         end, finish, 20000, finish)
     end
     if railTest then
@@ -112,8 +120,12 @@ later(500, function()
     local best, bestCount, points = nil, nil, {}
     local function clear(turret, point)
         local origin = turret.Item.WorldPosition
-        return turret.IsWithinAimingRadius(point) and
-            not turret.CheckLineOfSight(Vector2(origin.X / 100, origin.Y / 100), Vector2(point.X / 100, point.Y / 100))
+        local range = math.min(turret.AIRange * turret.Item.OffsetOnSelectedMultiplier, 10000)
+        if (point.X - origin.X)^2 + (point.Y - origin.Y)^2 > range^2 then return false, "range" end
+        if not turret.IsWithinAimingRadius(point) then return false, "arc" end
+        local body = turret.CheckLineOfSight(Vector2(origin.X / 100, origin.Y / 100), Vector2(point.X / 100, point.Y / 100))
+        if not body then return true, "open" end
+        return false, tostring(body.UserData)
     end
     if shipTest then
         LuaUserData.RegisterType("Barotrauma.SubmarineInfo")
@@ -206,7 +218,7 @@ later(500, function()
             local angle = math.rad(degree)
             local point = Vector2(origin.X + 950 * math.cos(angle), origin.Y + 950 * math.sin(angle))
             if clear(turret, point) and not hull.FindHull(point, nil, true, false) then
-                points[#points + 1] = point
+                points[#points + 1] = point - submarine.WorldPosition
                 local count = 0
                 for _, other in ipairs(stations) do
                     if clear(other, point) then count = count + 1 end
@@ -270,14 +282,17 @@ later(500, function()
                     end, holdExteriorPosition)
                 end
                 local function testSector()
-                    local alternate
+                    local alternate, alternateTurret, alternateController
                     if firstTurret then
-                        for _, point in ipairs(points) do
-                            if not firstTurret.IsWithinAimingRadius(point) then
+                        for _, offset in ipairs(points) do
+                            local point = submarine.WorldPosition + offset
+                            if not firstTurret.IsWithinAimingRadius(point) and not hull.FindHull(point, nil, true, false) then
                                 for _, turret in ipairs(stations) do
-                                    if turret ~= firstTurret and turret.Item.FindController() and
+                                    local controller = turret.Item.FindController()
+                                    if turret ~= firstTurret and controller and controller.Item ~= firstScope and
                                         turret.HasPowerToShoot() and clear(turret, point) then
                                         alternate = point
+                                        alternateTurret, alternateController = turret, controller
                                         break
                                     end
                                 end
@@ -286,11 +301,30 @@ later(500, function()
                         end
                     end
                     if alternate then
+                        log("Sector transition " .. firstTurret.Item.ID .. " -> " .. alternateTurret.Item.ID)
                         moveExteriorPosition(alternate)
+                        local lastSectorState
                         await("target leaves original arc and officer occupies a different periscope", function()
                             holdExteriorPosition()
-                            return active(security) == "operateweapons" and security.SelectedItem and
-                                security.SelectedItem ~= firstScope and security.SelectedItem.HasTag(Identifier("periscope"))
+                            local outsideArc = not firstTurret.IsWithinAimingRadius(enemy.WorldPosition)
+                            local alternateClear, sight = clear(alternateTurret, enemy.WorldPosition)
+                            local expected = Vector2(submarine.WorldPosition.X + offsetX, submarine.WorldPosition.Y + offsetY)
+                            local actual = enemy.WorldPosition
+                            local positioned = (actual.X - expected.X)^2 + (actual.Y - expected.Y)^2 <= 40^2
+                            local controllerItem = alternateController.Item
+                            local sectorState = string.format(
+                                "Sector outside=%s clear=%s sight=%s positioned=%s targetAlive=%s targetInside=%s power=%s turretUsable=%s scopeUsable=%s scopeAccess=%s objective=%s selected=%s",
+                                tostring(outsideArc), tostring(alternateClear), sight, tostring(positioned), tostring(not enemy.IsDead),
+                                tostring(enemy.CurrentHull ~= nil), tostring(alternateTurret.HasPowerToShoot()),
+                                tostring(alternateTurret.Item.IsInteractable(security)),
+                                tostring(controllerItem.IsInteractable(security)), tostring(controllerItem.HasAccess(security)),
+                                active(security), tostring(security.SelectedItem and security.SelectedItem.ID))
+                            if sectorState ~= lastSectorState then
+                                log(sectorState)
+                                lastSectorState = sectorState
+                            end
+                            return not enemy.IsDead and not enemy.CurrentHull and outsideArc and
+                                active(security) == "operateweapons" and security.SelectedItem == controllerItem
                         end, railgunAfterSector, 25000, railgunAfterSector)
                     else
                         log("SKIP sector change: no clear point outside the original turret arc")

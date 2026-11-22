@@ -1,0 +1,13 @@
+exterior (1): PASS - scenario completed
+Quickstart and crew: PASS (Engineer)
+Crew moved outside: PASS (idle)
+Exterior follow closes distance: PASS (560 -> 276, follow (Human))
+Native ore hit advances player deposit: PASS (progress=1)
+Bot cuts and retains a different ore: PASS (attached=false, progress=4.016663551330566, fuel=195.18450927734375, objective=follow (Human), distance=0)
+Nearby plant alone does not trigger collection: PASS (follow (Human))
+Native player plant interaction starts: PASS (follow (Human))
+Bot harvests and retains a different plant: PASS (follow (Human), attached=false)
+Bot is gathering as the enemy arrives: PASS (follow (Human))
+Nearby creature preempts active gathering: PASS (combat (Offensive))
+Returns to follow after threat removal: PASS (follow (Human))
+Dismissal clears follow: PASS (find safety)

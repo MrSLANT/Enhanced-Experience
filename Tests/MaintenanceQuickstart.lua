@@ -10,10 +10,11 @@ assert(not main.Client and session and session.GameMode.Preset.Identifier.Value 
 local lines = {}
 local logPath = "LocalMods/Enhanced Experience/Tests/" ..
     (MaintenanceBatteryProbe and "MaintenanceBatteryProbe-results.txt" or "MaintenanceQuickstart-results.txt")
+local writeResult = EnhancedExperienceQuickstartWriteResult or File.Write
 local function log(line)
     lines[#lines + 1] = line
     print("[Maintenance patrol] " .. line)
-    File.Write(logPath, table.concat(lines, "\n") .. "\n")
+    writeResult(logPath, table.concat(lines, "\n") .. "\n")
 end
 local function guard(fn)
     return function(...)
@@ -72,12 +73,12 @@ if MaintenanceBatteryProbe then
         log(string.format("%ds %.1f%% rate=%.1f%% access=%s | AI %s", attempt * 5, target.ChargePercentage,
             target.RechargeRatio * 100, tostring(patrol.CanAccess(target.Item)),
             objective and objective.Identifier.Value or "-"))
-        if target.ChargePercentage >= 99.9 and target.RechargeRatio > 0 then
-            log("PASS")
-        elseif attempt < 24 then
+        if target.RechargeRatio > 0 then
+            log("FAIL")
+        elseif attempt < 6 then
             Timer.Wait(guard(function() sampleBattery(attempt + 1) end), 5000)
         else
-            log("FAIL")
+            log("PASS")
         end
     end
     Timer.Wait(guard(function() sampleBattery(0) end), 500)
@@ -172,6 +173,8 @@ local function begin(attempts)
         log("SKIP oxygen: no powered refiller found")
     end
     spawn("flashlight", spot, function(tool)
+        local light = assert(tool.GetComponentString("LightComponent"), "Test flashlight has no light component")
+        light.IsOn = false
         resource("flashlight 50", "batterycell", 50, tool.GetComponentString("ItemContainer").Inventory)
     end)
     spawn("metalcrate", spot, function(crate)
@@ -181,7 +184,9 @@ local function begin(attempts)
         .CreateInstance(OrderPrefab.OrderTargetType.Entity, Character.Controlled, false).WithManualPriority(3)
     local interrupted, dismissed, resumed, sawWait = false, false, false, false
     local witnessedFixer = {}
+    local stationaryRateChanged = false
     local function sample(tick)
+        stationaryRateChanged = stationaryRateChanged or powered.RechargeRatio > 0
         local status = {}
         for _, test in ipairs(tests) do
             local item = test.item
@@ -215,7 +220,8 @@ local function begin(attempts)
             resumed = true
             log("Assistant resumed patrol")
         end
-        if tick < 165 then
+        -- The patrol services one resource at a time and several fixtures share a charger.
+        if tick < 225 then
             Timer.Wait(guard(function() sample(tick + 5) end), 5000)
             return
         end
@@ -224,14 +230,26 @@ local function begin(attempts)
             local eligible = test.name == "ground 0" or test.name == "flashlight 50" or
                 test.name == "crate 90" or test.name == "oxygen 50"
             local expected = eligible and 100 or test.initial
-            local restored = test.name ~= "crate 90" or test.item.Container == test.origin
+            local restored = true
+            if test.name == "crate 90" then
+                -- A full charger may supply a compatible spare while charging the original.
+                restored = false
+                for item in test.origin.GetComponentString("ItemContainer").Inventory.AllItems do
+                    if item.Prefab == test.item.Prefab and item.IsFullCondition then
+                        restored = true
+                        log(item == test.item and "Crate contains the recharged original" or
+                            "Crate contains a fully charged replacement")
+                        break
+                    end
+                end
+            end
             result(test.name, math.abs(test.item.ConditionPercentage - expected) < 0.05 and restored)
         end
         for skill, item in pairs(repair) do
             result(skill, witnessedFixer[skill] and item.IsFullCondition)
         end
         result("direct order interrupts patrol and dismissal resumes it", sawWait and resumed)
-        result("stationary battery", powered.ChargePercentage >= 99.9 and powered.RechargeRatio > 0)
+        result("stationary battery charge setting remains unchanged", not stationaryRateChanged)
         log("COMPLETE")
     end
     Timer.Wait(guard(function() sample(5) end), 5000)

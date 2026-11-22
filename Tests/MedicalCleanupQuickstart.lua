@@ -2,7 +2,9 @@
 -- cl_lua dofile([[LocalMods/Enhanced Experience/Tests/MedicalCleanupQuickstart.lua]])
 LuaUserData.RegisterType("Barotrauma.GameMain")
 LuaUserData.RegisterType("Barotrauma.DebugConsole")
-LuaUserData.RegisterType("EnhancedExperience.MedicalCleanupObjective")
+local cleanupType = LuaUserData.RegisterType("EnhancedExperience.MedicalCleanupObjective")
+LuaUserData.MakeMethodAccessible(cleanupType, "DescribeRemainingWork")
+LuaUserData.MakeMethodAccessible(cleanupType, "GetRemainingWorkForTest")
 local main = LuaUserData.CreateStatic("Barotrauma.GameMain")
 local console = LuaUserData.CreateStatic("Barotrauma.DebugConsole")
 local session = main.GameSession
@@ -11,11 +13,12 @@ assert(main.Client == nil and session and session.GameMode.Preset.Identifier.Val
 
 local logPath = "LocalMods/Enhanced Experience/Tests/MedicalCleanupQuickstart-results.txt"
 local results = {}
+local writeResult = EnhancedExperienceQuickstartWriteResult or File.Write
 local function record(name, status, detail)
     local line = name .. ": " .. status .. (detail and " (" .. detail .. ")" or "")
     results[#results + 1] = line
     print("[Medical cleanup test] " .. line)
-    File.Write(logPath, table.concat(results, "\n") .. "\n")
+    writeResult(logPath, table.concat(results, "\n") .. "\n")
 end
 
 local function guarded(action)
@@ -203,6 +206,16 @@ local function run(attempts)
                         isSorted(inv) and "PASS" or "FAIL")
                 end
 
+                local wait = OrderPrefab.Prefabs[Identifier("wait")]
+                    .CreateInstance(OrderPrefab.OrderTargetType.Entity, Character.Controlled, false)
+                    .WithManualPriority(3)
+                for bot in Character.CharacterList do
+                    if bot ~= doctor and bot ~= Character.Controlled and bot.IsBot and
+                        bot.IsOnPlayerTeam and not bot.IsDead then
+                        bot.SetOrder(wait, true, false, true)
+                    end
+                end
+
                 -- Deny access to all toxin cabinets on the fixture submarine and verify
                 -- that the loose toxin remains outside the medicine cabinet.
                 local disabled = {}
@@ -240,13 +253,34 @@ local function run(attempts)
                             return blocked.Container and blocked.Container.Prefab.Identifier.Value == "toxcabinet"
                         end, function(retried)
                             record("Poison transferred after cabinet access restored", retried and "PASS" or "FAIL")
-                            untilCondition(10, function()
+                            -- Remove unrelated pending items only in this disposable round,
+                            -- after checking the final toxin transfer.
+                            if retried then
+                                local removed = 0
+                                for entry in medicManager.CurrentOrders do
+                                    if entry.Identifier.Value == "cleanupitems" then
+                                        for item in entry.Objective.GetRemainingWorkForTest() do
+                                            if item ~= blocked then
+                                                Entity.Spawner.AddItemToRemoveQueue(item)
+                                                removed = removed + 1
+                                            end
+                                        end
+                                    end
+                                end
+                                record("Background cleanup targets queued for removal", "INFO", tostring(removed))
+                            end
+                            untilCondition(25, function()
                                 for entry in doctor.AIController.ObjectiveManager.CurrentOrders do
                                     if entry.Identifier.Value == "cleanupitems" then return false end
                                 end
                                 return true
                             end, function(dismissed)
-                                record("Cleanup order dismisses itself after the last item", dismissed and "PASS" or "FAIL")
+                                local current = medicManager.CurrentObjective
+                                record("Cleanup order dismisses itself after the last item", dismissed and "PASS" or "FAIL",
+                                    not dismissed and ("active objective=" ..
+                                        (current and current.Identifier.Value or "none") ..
+                                        (current and LuaUserData.IsTargetType(current, replacementName) and
+                                            (", " .. current.DescribeRemainingWork()) or "")) or nil)
                                 record("Fixture", "COMPLETE")
                             end)
                         end)

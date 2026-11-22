@@ -1,0 +1,20 @@
+cleanup (1): PASS - scenario completed
+Fixture: RUNNING
+Medical Doctor factory: PASS
+Other profession factory: PASS
+Repeated order leaves one cleanup objective: PASS
+Radiotoxin to Toxin Cabinet: PASS (toxcabinet)
+Morphine to Medicine Cabinet: PASS (medcabinet)
+Poison+medical takes toxin route: PASS (toxcabinet)
+Misfiled poison moved between cabinets: PASS (toxcabinet)
+Misfiled medicine moved between cabinets: PASS (medcabinet)
+Medicine collected from a loose crate: PASS (medcabinet)
+Separate and new items merged in medcabinet: PASS (items=50, slots=9/9/9)
+Alphabetical order in medcabinet: PASS
+Separate and new items merged in toxcabinet: PASS (items=5, slots=1/1/1)
+Alphabetical order in toxcabinet: PASS
+Unavailable toxin cabinets leave poison alone: PASS (still loose)
+Poison transferred after cabinet access restored: PASS
+Background cleanup targets queued for removal: INFO (6)
+Cleanup order dismisses itself after the last item: PASS
+Fixture: COMPLETE

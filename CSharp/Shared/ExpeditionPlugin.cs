@@ -24,6 +24,8 @@ namespace EnhancedExperience
     public sealed class ExpeditionPlugin : IAssemblyPlugin
     {
         private readonly Harmony harmony = new Harmony("EnhancedExperience.PrepareForExpedition");
+        private static ConditionalWeakTable<AIObjectiveManager, object> initializedCrew = new();
+        private static readonly object Installed = new();
         internal static readonly Action<AIObjectiveManager, Order> DismissOrder =
             AccessTools.MethodDelegate<Action<AIObjectiveManager, Order>>(
                 AccessTools.Method(typeof(AIObjectiveManager), "DismissSelf", new[] { typeof(Order) }));
@@ -33,6 +35,9 @@ namespace EnhancedExperience
             ExteriorFollow.Install(harmony);
             SecurityDefense.InstallPatches(harmony);
             ExpeditionInventory.Install(harmony);
+            harmony.Patch(
+                AccessTools.Method(typeof(HumanAIController), nameof(HumanAIController.Update)),
+                prefix: new HarmonyMethod(typeof(ExpeditionPlugin), nameof(EnsureCrewObjectives)));
             harmony.Patch(
                 AccessTools.Method(typeof(AIObjectiveManager), nameof(AIObjectiveManager.CreateAutonomousObjectives)),
                 prefix: new HarmonyMethod(typeof(ExpeditionPlugin), nameof(PreserveMaintenancePatrol)),
@@ -62,6 +67,17 @@ namespace EnhancedExperience
             }
         }
 
+        private static void EnsureCrewObjectives(HumanAIController __instance)
+        {
+            var manager = __instance.ObjectiveManager;
+            var crew = __instance.Character;
+            if (manager == null || initializedCrew.TryGetValue(manager, out _) ||
+                crew.Info?.Job == null || !CrewRepairPriorities.AppliesTo(crew)) { return; }
+
+            // A multiplayer bot may build its initial list before its controller is attached.
+            InstallCrewObjectives(manager, crew, null);
+        }
+
         private static void PreserveMaintenancePatrol(AIObjectiveManager __instance, out MaintenancePatrol __state) =>
             __state = __instance.GetObjective<MaintenancePatrol>();
 
@@ -71,6 +87,10 @@ namespace EnhancedExperience
             CrewRepairPriorities.Install(__instance, ___character);
             MaintenancePatrol.InstallForCrew(__instance, ___character, __state);
             SecurityDefense.InstallForCrew(__instance, ___character);
+            if (___character.Info?.Job != null && CrewRepairPriorities.AppliesTo(___character))
+            {
+                initializedCrew.GetValue(__instance, _ => Installed);
+            }
         }
 
         private static void ReplaceOrderObjective(Order order, float priorityModifier, AIObjectiveManager __instance,
@@ -87,18 +107,9 @@ namespace EnhancedExperience
                 };
             }
             else if (__result is AIObjectiveDeconstructItems && order.Identifier.Value == "deconstructitems" &&
-                GameMain.NetworkMember == null && ___character.IsBot && MineralDeconstructionObjective.IsMechanic(___character))
+                ___character.IsBot)
             {
-                __result = new MineralDeconstructionObjective(___character, __instance, priorityModifier)
-                {
-                    Identifier = order.Identifier,
-                    IgnoreAtOutpost = __result.IgnoreAtOutpost
-                };
-            }
-            else if (__result is AIObjectiveDeconstructItems && order.Identifier.Value == "deconstructitems" &&
-                ___character.IsBot && MedicalCleanupObjective.IsDoctor(___character))
-            {
-                __result = new MedicalDeconstructionObjective(___character, __instance, priorityModifier)
+                __result = new CrewDeconstructionObjective(___character, __instance, priorityModifier)
                 {
                     Identifier = order.Identifier,
                     IgnoreAtOutpost = __result.IgnoreAtOutpost
@@ -154,6 +165,8 @@ namespace EnhancedExperience
         {
             ExteriorFollow.Clear();
             SecurityDefense.Clear();
+            CrewRepairPriorities.Clear();
+            initializedCrew = new();
             ExpeditionInventory.Clear();
             harmony.UnpatchSelf();
         }

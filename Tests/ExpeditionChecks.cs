@@ -59,14 +59,10 @@ internal static class ExpeditionChecks
         Check(side + " medical cleanup objective loads", medical.BaseType.FullName == "Barotrauma.AIObjectiveCleanupItems");
         Check(side + " cabinet organizer loads", plugin.GetType("EnhancedExperience.MedicalCabinetOrganizer", throwOnError: true)
             .GetMethod("Organize", BindingFlags.Static | BindingFlags.NonPublic) != null);
-        var deconstruction = plugin.GetType("EnhancedExperience.MedicalDeconstructionObjective", throwOnError: true);
-        Check(side + " medical deconstruction objective loads",
-            deconstruction.BaseType.BaseType.FullName == "Barotrauma.AIObjectiveDeconstructItems");
-        VerifyDeconstruction(deconstruction, args[3]);
-        var mineral = plugin.GetType("EnhancedExperience.MineralDeconstructionObjective", throwOnError: true);
-        Check(side + " mechanic and doctor share the automatic deconstruction objective",
-            mineral.BaseType == deconstruction.BaseType);
-        VerifyVanillaMinerals(args[3]);
+        var deconstruction = plugin.GetType("EnhancedExperience.CrewDeconstructionObjective", throwOnError: true);
+        Check(side + " crew deconstruction extends the native marked-item objective",
+            deconstruction.BaseType.FullName == "Barotrauma.AIObjectiveDeconstructItems");
+        VerifyResourceClassification(deconstruction, args[3]);
 
         var entry = plugin.GetType("EnhancedExperience.ExpeditionPlugin", throwOnError: true);
         var instance = Activator.CreateInstance(entry);
@@ -147,6 +143,10 @@ internal static class ExpeditionChecks
             Check(side + " factory patch", IsPatched(factory));
             Check(side + " Return order transition patch", IsPatched(setOrder));
             Check(side + " crew autonomy patch", IsPatched(autonomousFactory));
+            var updatePatches = patchInfo.Invoke(null, new object[] { escortTargets[0] });
+            var prefixes = (System.Collections.IEnumerable)updatePatches.GetType().GetField("Prefixes").GetValue(updatePatches);
+            Check(side + " attached crew initialization retry patch", prefixes.Cast<object>().Any(prefix =>
+                ((MethodInfo)prefix.GetType().GetProperty("PatchMethod").GetValue(prefix)).Name == "EnsureCrewObjectives"));
             Check(side + " escort patches", escortTargets.All(IsPatched));
             Check(side + " expedition acquisition tracking patch", IsPatched(inventoryPut));
             Check(side + " security targeting and hull-damage patches", defenseTargets.All(IsPatched));
@@ -179,6 +179,63 @@ internal static class ExpeditionChecks
         Check(side + " crew repair yields to active orders and falls back without targets",
             Priority(true, true, true) == 0f && Priority(true, true, false) == 0f &&
             Priority(false, false, true) == 0f && Priority(false, false, false) == 0f);
+        var dutyPriority = priorities.GetMethod("DutyPriority", BindingFlags.Static | BindingFlags.NonPublic);
+        float Duty(bool assigned, bool available, bool emergency) =>
+            (float)dutyPriority.Invoke(null, new object[] { assigned, available, true, emergency });
+        var highestOrder = (float)manager.GetField("HighestOrderPriority").GetRawConstantValue();
+        Check(side + " emergency overrides ordinary orders, yields to safety and clears when assignment ends",
+            Duty(true, true, true) > highestOrder && Duty(true, true, true) < emergencyPriority &&
+            Duty(true, false, true) == 0f && Duty(false, true, true) == 0f &&
+            Duty(true, true, false) < orderFloor);
+
+        var flooding = priorities.GetMethod("IsCriticalFlooding", BindingFlags.Static | BindingFlags.NonPublic);
+        bool Critical(bool exterior, bool occupied, float opening, float water, bool responding) =>
+            (bool)flooding.Invoke(null, new object[] { exterior, occupied, opening, water, responding });
+        Check(side + " only severe occupied exterior flooding starts an emergency and response has hysteresis",
+            Critical(true, true, 0.5f, 50f, false) && !Critical(true, false, 1f, 100f, false) &&
+            !Critical(false, true, 1f, 100f, false) && !Critical(true, true, 0.4f, 45f, false) &&
+            Critical(true, true, 0.4f, 45f, true) && !Critical(true, true, 0f, 100f, true));
+
+        var bidType = priorities.GetNestedType("Bid`2", BindingFlags.NonPublic)
+            .MakeGenericType(typeof(string), typeof(string));
+        var assign = priorities.GetMethod("Assign", BindingFlags.Static | BindingFlags.NonPublic)
+            .MakeGenericMethod(typeof(string), typeof(string));
+        System.Collections.IDictionary Match(params (string Worker, string Target, int Urgency, float Score)[] bids)
+        {
+            var candidates = Array.CreateInstance(bidType, bids.Length);
+            for (int i = 0; i < bids.Length; i++)
+            {
+                var bid = bids[i];
+                candidates.SetValue(Activator.CreateInstance(bidType, bid.Worker, bid.Target, bid.Urgency, bid.Score), i);
+            }
+            return (System.Collections.IDictionary)assign.Invoke(null, new object[] { candidates });
+        }
+        string Target(System.Collections.IDictionary assignments, string worker) =>
+            assignments[worker] is { } bid ? (string)bidType.GetProperty("Target").GetValue(bid) : null;
+
+        var assigned = Match(("mechanic", "pump", 0, 80f), ("assistant", "pump", 0, 30f),
+            ("mechanic", "junction", 0, 50f), ("engineer", "junction", 0, 70f));
+        Check(side + " simultaneous repairs have one worker and one target apiece",
+            assigned.Count == 2 && Target(assigned, "mechanic") == "pump" && Target(assigned, "engineer") == "junction");
+        assigned = Match(("assistant", "pump", 0, 30f), ("engineer", "junction", 0, 70f));
+        Check(side + " an eligible helper takes over when the specialist is absent",
+            assigned.Count == 2 && Target(assigned, "assistant") == "pump");
+        assigned = Match(("mechanic", "pump", 0, 100f), ("mechanic", "breach", 2, 20f),
+            ("assistant", "pump", 0, 30f));
+        Check(side + " critical breach preempts committed repair and frees it for a helper",
+            Target(assigned, "mechanic") == "breach" && Target(assigned, "assistant") == "pump");
+
+        var inspection = priorities.GetMethod("GetInspectionPriority", BindingFlags.Static | BindingFlags.NonPublic);
+        float Inspect(bool hasRoom, bool available) =>
+            (float)inspection.Invoke(null, new object[] { hasRoom, available });
+        assigned = Match(("engineer", "machine room", -1, 100f), ("mechanic", "machine room", -1, 60f),
+            ("engineer", "junction", 0, 10f), ("mechanic", "electrical room", -1, 50f));
+        Check(side + " actual repair preempts inspection and another bot takes the available room",
+            Target(assigned, "engineer") == "junction" && Target(assigned, "mechanic") == "machine room");
+        Check(side + " inspection yields to portable maintenance and orders",
+            Inspect(true, true) > 0f && Inspect(true, true) < 30f && Inspect(true, false) == 0f &&
+            Inspect(false, true) == 0f);
+
         Check(side + " crew repair uses native leak and equipment objectives",
             priorities.GetNestedType("AutoFixLeaks", BindingFlags.NonPublic).BaseType.FullName ==
                 "Barotrauma.AIObjectiveFixLeaks" &&
@@ -186,76 +243,38 @@ internal static class ExpeditionChecks
                 "Barotrauma.AIObjectiveRepairItems");
     }
 
-    private static void VerifyDeconstruction(Type objective, string installedGame)
+    private static void VerifyResourceClassification(Type objective, string installedGame)
     {
-        var expected = new Dictionary<string, string>
+        var classify = objective.GetMethod("IsResource", BindingFlags.Static | BindingFlags.NonPublic);
+        var identifier = classify.GetParameters()[0].ParameterType;
+        bool IsResource(string id, params string[] tags)
         {
-            ["aquaticpoppy"] = "opium,opium,opium",
-            ["yeastshroom"] = "ethanol,ethanol,ethanol",
-            ["slimebacteria"] = "antibiotics,antibiotics,antibiotics",
-            ["adrenalinegland"] = "adrenaline,adrenaline",
-            ["swimbladder"] = "antibloodloss1,antibloodloss1,antibloodloss1,stabilozine,stabilozine",
-            ["smallmudraptoregg"] = "alienblood",
-            ["mucusball"] = "antibleeding1,calcium,paralyxis",
-            ["hallucinogenicbufotoxin"] = "antibloodloss1,paralyxis",
-            ["oxygeniteshard"] = "liquidoxygenite,liquidoxygenite",
-            ["smallcrawleregg"] = "sulphuricacid",
-            ["sulphuriteshard"] = "sulphuricacid,sulphuricacid",
-            ["divingknifeunique"] = "iron,morbusine"
-        };
-        var whitelist = (System.Collections.IEnumerable)objective
-            .GetField("Allowed", BindingFlags.NonPublic | BindingFlags.Static).GetValue(null);
-        Check("Exactly twelve automatic ingredients",
-            expected.Keys.ToHashSet().SetEquals(whitelist.Cast<object>().Select(id => id.ToString())));
-
-        var recipes = Directory.EnumerateFiles(Path.Combine(installedGame, "Content", "Items"), "*.xml", SearchOption.AllDirectories)
-            .SelectMany(file => XDocument.Load(file).Descendants())
-            .Where(element => element.Attribute("identifier") is { } id && expected.ContainsKey(id.Value) &&
-                element.Elements().Any(child => child.Name.LocalName == "Deconstruct"))
-            .ToLookup(element => element.Attribute("identifier").Value);
-        foreach (var entry in expected)
-        {
-            var data = recipes[entry.Key].ToArray();
-            var output = data.SelectMany(element => element.Elements("Deconstruct"))
-                .SelectMany(recipe => recipe.Elements("Item"))
-                .SelectMany(item => Enumerable.Repeat(item.Attribute("identifier").Value,
-                    (int?)item.Attribute("amount") ?? 1)).OrderBy(id => id, StringComparer.Ordinal);
-            Check(entry.Key + " installed recipe", data.Length == 1 && string.Join(",", output) == entry.Value);
+            var values = Array.CreateInstance(identifier, tags.Length);
+            for (int i = 0; i < tags.Length; i++)
+            {
+                values.SetValue(Activator.CreateInstance(identifier, tags[i]), i);
+            }
+            return (bool)classify.Invoke(null, new[] { Activator.CreateInstance(identifier, id), values });
         }
-    }
 
-    private static void VerifyVanillaMinerals(string installedGame)
-    {
+        Check("Mod resources are classified by loaded tags",
+            new[] { "ore", "plant", "plantitem", "seed" }.All(tag => IsResource("modresource", tag)));
+        Check("Manual-only items remain outside automatic selection",
+            !IsResource("antidama1", "medical") && !IsResource("adrenalinegland", "smallitem") &&
+            !IsResource("smallplanter", "planter"));
+
         var items = Directory.EnumerateFiles(Path.Combine(installedGame, "Content", "Items"), "*.xml",
                 SearchOption.AllDirectories)
             .SelectMany(file => XDocument.Load(file).Descendants())
-            .Where(item => item.Attribute("identifier") != null &&
-                (item.Attribute("category") != null || item.Attribute("variantof") != null))
+            .Where(item => item.Attribute("identifier") != null && item.Attribute("category") != null &&
+                item.Elements("Deconstruct").Elements("Item").Any(product => product.Attribute("requiredotheritem") == null))
+            .Where(item => IsResource((string)item.Attribute("identifier"), Tokens(item, "tags").ToArray()))
             .ToArray();
-        var minerals = items.Where(item => Tokens(item, "tags").Contains("ore") ||
-            (string)item.Attribute("identifier") is "oxygeniteshard" or "sulphuriteshard").ToArray();
-        var medicalInputs = items.SelectMany(item => item.Elements().Where(recipe =>
-                recipe.Name.LocalName.ToLowerInvariant() is ("fabricate" or "fabricable" or "fabricableitem") &&
-                (Tokens(item, "category").Contains("medical") || Tokens(item, "tags").Overlaps(new[] { "medical", "poison" }) ||
-                 Tokens(recipe, "suitablefabricators").Contains("medicalfabricator") ||
-                 recipe.Elements("RequiredSkill").Any(skill => (string)skill.Attribute("identifier") == "medical"))))
-            .SelectMany(recipe => recipe.Elements("RequiredItem"))
-            .Select(item => (string)item.Attribute("identifier"))
-            .ToHashSet();
-        medicalInputs.UnionWith(new[] { "oxygeniteshard", "sulphuriteshard" });
-
-        var processable = minerals.Where(item => item.Elements("Deconstruct").Elements("Item")
-                .Any(product => product.Attribute("requiredotheritem") == null))
-            .Select(item => (string)item.Attribute("identifier")).ToHashSet();
-        Check("All 28 vanilla ore recipes remain available for automatic processing",
-            processable.Except(medicalInputs).ToHashSet().SetEquals(
-                ("amblygonite aragonite bornite brockite cassiterite chalcopyrite chamosite chrysoprase cryolite diamond " +
-                 "esperite galena graphite hydroxyapatite ilmenite ironore langbeinite lazulite polyhalite pyromorphite " +
-                 "quartz sphalerite stannite sylvite thorianite titanite triphylite uraniumore").Split(' ')));
-        var protectedMinerals = minerals.Select(item => (string)item.Attribute("identifier"))
-            .Where(medicalInputs.Contains).ToHashSet();
-        Check("Vanilla medical minerals and shards (" + string.Join(", ", protectedMinerals.Order()) + ")",
-            protectedMinerals.SetEquals(new[] { "dementonite", "fulgurium", "oxygeniteshard", "paralyxis", "sulphuriteshard" }));
+        Check("All 30 vanilla ore and shard recipes are classified",
+            items.Count(item => Tokens(item, "tags").Contains("ore") ||
+                (string)item.Attribute("identifier") is "oxygeniteshard" or "sulphuriteshard") == 30);
+        Check("All 16 vanilla wild plants, seeds and crops with recipes are classified",
+            items.Count(item => Tokens(item, "tags").Overlaps(new[] { "plant", "plantitem", "seed" })) == 16);
     }
 
     private static HashSet<string> Tokens(XElement element, string attribute) =>

@@ -8,21 +8,30 @@ local structure = LuaUserData.CreateStatic("Barotrauma.Structure")
 local session = main.GameSession
 assert(not main.Client and session and session.GameMode.Preset.Identifier.Value == "devsandbox",
     "Start a disposable single-player quickstart")
+local handoff = CrewRepairHandoff
+CrewRepairHandoff = nil
+local emergency = CrewRepairEmergency == true
+CrewRepairEmergency = nil
 local edgeCases = CrewRepairEdgeCases == true
 CrewRepairEdgeCases = nil
-local resultFile = edgeCases and "CrewRepairEdgeCases-results.txt" or "CrewRepairQuickstart-results.txt"
+local resultFile = emergency and "CrewRepairEmergency-results.txt" or
+    edgeCases and "CrewRepairEdgeCases-results.txt" or "CrewRepairQuickstart-results.txt"
 
 local lines = {}
+local writeResult = EnhancedExperienceQuickstartWriteResult or File.Write
 local function log(message)
     lines[#lines + 1] = message
     print("[Crew repair] " .. message)
-    File.Write("LocalMods/Enhanced Experience/Tests/" .. resultFile, table.concat(lines, "\n") .. "\n")
+    writeResult("LocalMods/Enhanced Experience/Tests/" .. resultFile, table.concat(lines, "\n") .. "\n")
 end
 local function later(callback, milliseconds)
     Timer.Wait(function()
         if main.GameSession ~= session then return end
         local ok, err = pcall(callback)
-        if not ok then log("ERROR " .. tostring(err)) end
+        if not ok then
+            log("ERROR " .. tostring(err))
+            if handoff then log("COMPLETE") end
+        end
     end, milliseconds)
 end
 local function manager(bot) return bot.AIController.ObjectiveManager end
@@ -39,6 +48,7 @@ local function waitUntil(label, predicate, complete, remaining)
         complete()
     elseif remaining == 0 then
         log("FAIL " .. label)
+        if handoff then log("COMPLETE") end
     else
         later(function() waitUntil(label, predicate, complete, remaining - 1) end, 250)
     end
@@ -106,6 +116,125 @@ later(function()
             wall.AddDamage(index, -wall.SectionDamage(index), nil, false, false)
         end
         error("No exterior leak could be created")
+    end
+
+    if handoff then
+        local function currentLeak(bot)
+            local objective = manager(bot).CurrentObjective
+            if objective and objective.Identifier.Value == "fixleaks" then
+                local task = objective.CurrentSubObjective
+                return task and task.Leak
+            end
+        end
+        local helpers = {}
+        for member in Character.CharacterList do
+            if member.IsBot and member.IsOnPlayerTeam and member ~= Character.Controlled and member.CurrentHull and
+                member.Submarine == mechanic.Submarine and member ~= mechanic then
+                helpers[#helpers + 1] = member
+                member.SetOrder(waitOrder, true, false, true)
+            end
+        end
+        local leaking = openLeak(mechanic)
+        local target
+        waitUntil("mechanic owns the active leak repair", function()
+            target = currentLeak(mechanic)
+            return target and leaking()
+        end, function()
+            local dead = handoff == "handoffdead"
+            local max = mechanic.CharacterHealth.MaxVitality
+            if dead then
+                mechanic.SetAllDamage(max * 3, 0, 0)
+            else
+                -- SetAllDamage applies its amount to each limb. Stop as soon as vitality crosses zero.
+                for damage = 1, math.ceil(max) do
+                    mechanic.SetAllDamage(damage, 0, 0)
+                    if mechanic.IsUnconscious or mechanic.IsDead then break end
+                end
+            end
+            log(string.format("Original mechanic after fixture: vitality %.1f, unconscious=%s, dead=%s",
+                mechanic.CharacterHealth.Vitality, tostring(mechanic.IsUnconscious), tostring(mechanic.IsDead)))
+            for _, helper in ipairs(helpers) do helper.SetOrder(waitOrder.GetDismissal(), true, false, true) end
+            waitUntil(dead and "original mechanic died" or "original mechanic is unconscious and alive",
+                function() return dead and mechanic.IsDead or not dead and mechanic.IsUnconscious and not mechanic.IsDead end,
+                function()
+                    waitUntil("another bot takes ownership of the same leak", function()
+                        for _, helper in ipairs(helpers) do
+                            if currentLeak(helper) == target then return true end
+                        end
+                        return false
+                    end, function()
+                        waitUntil("replacement bot closes the leak", function() return not leaking() end,
+                            function() log("COMPLETE") end, 180)
+                    end, 100)
+                end, 24)
+        end, 60)
+        return
+    end
+
+    if emergency then
+        LuaUserData.RegisterType("Barotrauma.Gap")
+        local gapType = LuaUserData.CreateStatic("Barotrauma.Gap")
+        local bots = {}
+        local occupied = {}
+        for member in Character.CharacterList do
+            if member.IsOnPlayerTeam and not member.IsDead and member.CurrentHull and
+                member.Submarine == Character.Controlled.Submarine then
+                occupied[member.CurrentHull.ID] = true
+                if member.IsBot and member ~= Character.Controlled then
+                    bots[#bots + 1] = member
+                    member.SetOrder(waitOrder, true, false, true)
+                end
+            end
+        end
+
+        local function startFlooding()
+            local existing = {}
+            for gap in gapType.GapList do existing[gap.ID] = true end
+            for wall in structure.WallList do
+                if wall.Submarine == Character.Controlled.Submarine and wall.MaxHealth > 0 then
+                    for index = 0, wall.SectionCount - 1 do
+                        if wall.SectionDamage(index) == 0 then
+                            wall.AddDamage(index, wall.MaxHealth * 0.9, nil, false, false)
+                            for gap in gapType.GapList do
+                                local hull = gap.FlowTargetHull
+                                if not existing[gap.ID] and not gap.IsRoomToRoom and gap.Open >= 0.5 and
+                                    hull and occupied[hull.ID] then
+                                    return wall, index, hull
+                                end
+                            end
+                            wall.AddDamage(index, -wall.SectionDamage(index), nil, false, false)
+                        end
+                    end
+                end
+            end
+        end
+
+        waitUntil("crew obeys Wait before the emergency", function()
+            return active(engineer) == "wait" and active(mechanic) == "wait" and active(assistant) == "wait"
+        end, function()
+            local wall, index, hull = startFlooding()
+            assert(wall, "No exterior breach in an occupied hull")
+            local oldWater = hull.WaterVolume
+            hull.WaterVolume = hull.Volume * 0.55
+            local responder
+            waitUntil("exactly one bot suspends Wait for the flooded compartment", function()
+                local count = 0
+                for _, bot in ipairs(bots) do
+                    if active(bot) == "fixleaks" then
+                        count = count + 1
+                        responder = bot
+                    end
+                end
+                return count == 1 and manager(responder).CurrentOrder.Identifier.Value == "wait"
+            end, function()
+                wall.AddDamage(index, -wall.SectionDamage(index), nil, false, false)
+                hull.WaterVolume = oldWater
+                waitUntil("the same bot resumes its existing Wait order", function()
+                    return active(responder) == "wait"
+                end, function() log("COMPLETE") end, 24)
+            end, 24)
+        end, 24)
+        return
     end
 
     if edgeCases then

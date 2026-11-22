@@ -351,7 +351,8 @@ namespace EnhancedExperience
             if (IsOperational(tool)) { return false; }
             if (tool == null)
             {
-                bool MissingTool() => character.Inventory.FindItem(item => Id(item) == id, recursive: true) == null;
+                bool MissingTool() =>
+                    character.Inventory.FindItem(item => Id(item) == id && CanUse(item), recursive: true) == null;
                 if (!MissingTool()) { return false; }
 
                 return TryStart(Rank(storage().Where(item => Id(item) == id),
@@ -441,23 +442,7 @@ namespace EnhancedExperience
                 Reservations.Remove(item);
                 Reservations.Add(item, new WeakReference<AIObjectivePrepareForExpedition>(this));
 
-                if (CanReach(item))
-                {
-                    FinishAttempt();
-                }
-                else
-                {
-                    var root = item.GetRootInventoryOwner() as Item ?? item;
-                    TryAddSubObjective(ref route, () => new AIObjectiveGoTo(root, character, objectiveManager,
-                        repeat: false, getDivingGearIfNeeded: false, closeEnough: AIObjectiveGetItem.DefaultReach)
-                    {
-                        AllowGoingOutside = false,
-                        SpeakIfFails = false,
-                        endNodeFilter = AIObjectiveGetItem.CreateEndNodeFilter(root),
-                        AbortCondition = _ => target != item || !CanTake(item) ||
-                            (item.GetRootInventoryOwner() as Item ?? item) != root
-                    });
-                }
+                FinishAttempt();
                 return true;
             }
             return false;
@@ -504,11 +489,31 @@ namespace EnhancedExperience
             }
             var source = target.ParentInventory as ItemInventory;
             bool wasCarried = target.IsOwnedBy(character);
-            bool success = CanWork() && CanUse(target) && CanReach(target) &&
-                (target.IsOwnedBy(character) || CanTake(target)) &&
-                (recipient == null || recipient.IsOwnedBy(character) && CanUse(recipient)) &&
-                (!equipSuit || ShouldEquip(target)) &&
-                Transfer(target, recipient, equipSuit);
+            if (!CanWork() || !CanUse(target) || !wasCarried && !CanTake(target) ||
+                recipient != null && (!recipient.IsOwnedBy(character) || !CanUse(recipient)) ||
+                equipSuit && !ShouldEquip(target))
+            {
+                CancelAttempt(exclude: true);
+                return;
+            }
+            if (!CanReach(target))
+            {
+                // A loose item can move out of reach between navigation and pickup.
+                var item = target;
+                var root = item.GetRootInventoryOwner() as Item ?? item;
+                RemoveSubObjective(ref route);
+                TryAddSubObjective(ref route, () => new AIObjectiveGoTo(root, character, objectiveManager,
+                    repeat: false, getDivingGearIfNeeded: false, closeEnough: AIObjectiveGetItem.DefaultReach)
+                {
+                    AllowGoingOutside = false,
+                    SpeakIfFails = false,
+                    endNodeFilter = AIObjectiveGetItem.CreateEndNodeFilter(root),
+                    AbortCondition = _ => target != item || !CanTake(item) ||
+                        (item.GetRootInventoryOwner() as Item ?? item) != root
+                });
+                return;
+            }
+            bool success = Transfer(target, recipient, equipSuit);
             if (success && !wasCarried)
             {
                 ExpeditionInventory.RecordPickup(character, target, source);

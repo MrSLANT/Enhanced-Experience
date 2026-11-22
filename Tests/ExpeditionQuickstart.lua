@@ -14,11 +14,12 @@ assert(mode == "crate" or mode == "floor" or mode == "scenarios" or mode == "dep
 local resultPath = "LocalMods/Enhanced Experience/Tests/ExpeditionQuickstart" ..
     (mode ~= "crate" and ("-" .. mode) or "") .. "-results.txt"
 local results = {}
+local writeResult = EnhancedExperienceQuickstartWriteResult or File.Write
 local function record(name, result, detail)
     local line = name .. ": " .. result .. (detail and " (" .. detail .. ")" or "")
     results[#results + 1] = line
     print("[Expedition test] " .. line)
-    File.Write(resultPath, table.concat(results, "\n") .. "\n")
+    writeResult(resultPath, table.concat(results, "\n") .. "\n")
 end
 
 local function guarded(run)
@@ -155,9 +156,21 @@ local function testDepth()
         parameters.Height = originalHeight
         if not submarine.Removed then submarine.SetCrushDepth(originalCrushDepth) end
     end
-    Timer.Wait(guarded(clearDepth), 12000)
+    Timer.Wait(guarded(clearDepth), 20000)
     local initialDepth = setDepth(6300, bot.WorldPosition.Y)
     assert(math.abs(initialDepth - 6300) < 1, "Fixture could not set 6300 m")
+    local gearType = "Barotrauma.AIObjectiveFindDivingGear"
+    LuaUserData.RegisterType(gearType)
+    local divingGear = LuaUserData.CreateStatic(gearType)
+    local function waitForUnsafe(attempts, done)
+        if main.GameSession ~= session then clearDepth() return end
+        local unsafe = debugTag():find("(PressureUnsafe)", 1, true) ~= nil
+        if unsafe or attempts == 0 then
+            done(unsafe)
+        else
+            Timer.Wait(guarded(function() waitForUnsafe(attempts - 1, done) end), 500)
+        end
+    end
 
     local function checkFloodGate()
         local objectiveType = "EnhancedExperience.AIObjectivePrepareForExpedition"
@@ -193,21 +206,18 @@ local function testDepth()
         for _, entry in ipairs(hulls) do entry.hull.WaterVolume = entry.original end
         if not ok then error(err) end
     end
-    Timer.Wait(guarded(function()
-        if main.GameSession ~= session then clearDepth() return end
+    waitForUnsafe(12, function(unsafe)
         local worn = bot.Inventory.GetItemInLimbSlot(InvSlotType.OuterClothes)
         local pucs = worn and worn.Prefab.Identifier.Value == "pucs"
-        local unsafe = debugTag():find("(PressureUnsafe)", 1, true) ~= nil
+        local depth = level.GetRealWorldDepth(bot.WorldPosition.Y)
+        local stockUnsafe = pucs and not divingGear.IsSuitablePressureProtection(worn, Identifier("deepdiving"), bot)
         record("Simulated 6300 m: PUCS remains worn but pressure is unsafe",
-            pucs and unsafe and bot.CurrentHull ~= nil and "PASS" or "FAIL",
-            string.format("depth=%.2f m, %s", level.GetRealWorldDepth(bot.WorldPosition.Y), describe()))
+            math.abs(depth - 6300) < 5 and stockUnsafe and unsafe and bot.CurrentHull ~= nil and "PASS" or "FAIL",
+            string.format("depth=%.2f m, %s", depth, describe()))
 
         local floodTest, floodError = pcall(checkFloodGate)
         if not floodTest then record("Live flooding gate", "NOT TESTED", tostring(floodError)) end
 
-        local gearType = "Barotrauma.AIObjectiveFindDivingGear"
-        LuaUserData.RegisterType(gearType)
-        local divingGear = LuaUserData.CreateStatic(gearType)
         local planned, accepted = pcall(function()
             local pluginType = "EnhancedExperience.ExpeditionPlugin"
             LuaUserData.RegisterType(pluginType)
@@ -224,21 +234,23 @@ local function testDepth()
                     local wornNow = bot.Inventory.GetItemInLimbSlot(InvSlotType.OuterClothes)
                     local outer = bot.Inventory.FindLimbSlot(InvSlotType.OuterClothes)
                     local equipped = wornNow == abyss or bot.Inventory.TryPutItem(abyss, outer, false, false, bot)
-                    Timer.Wait(guarded(function()
-                        if main.GameSession ~= session then clearDepth() return end
+                    local function checkAbyss(pressure)
                         local actual = bot.Inventory.GetItemInLimbSlot(InvSlotType.OuterClothes)
-                        local pressure = debugTag():find("(PressureUnsafe)", 1, true) ~= nil
+                        local depth = level.GetRealWorldDepth(bot.WorldPosition.Y)
                         local stockPressureSafe = divingGear.IsSuitablePressureProtection(abyss, Identifier("deepdiving"), bot)
                         record("Simulated 6800 m: worn Abyss does not confer readiness",
-                            equipped and actual == abyss and stockPressureSafe == false and pressure and "PASS" or "FAIL",
-                            string.format("depth=%.2f m, %s", level.GetRealWorldDepth(bot.WorldPosition.Y), describe()))
+                            math.abs(depth - 6800) < 5 and equipped and actual == abyss and
+                            stockPressureSafe == false and pressure and "PASS" or "FAIL",
+                            string.format("depth=%.2f m, %s", depth, describe()))
                         clearDepth()
                         finish()
-                    end), 2300)
+                    end
+                    -- Do not reuse PressureUnsafe cached for the previous suit and depth.
+                    Timer.Wait(guarded(function() waitForUnsafe(12, checkAbyss) end), 1500)
                 end), 500)
             end))
         end))
-    end), 2300)
+    end)
 end
 
 local function testFire()

@@ -1,0 +1,6 @@
+coordination (1): PASS - scenario completed
+START
+PASS crew obeys Wait before the emergency
+PASS exactly one bot suspends Wait for the flooded compartment
+PASS the same bot resumes its existing Wait order
+COMPLETE

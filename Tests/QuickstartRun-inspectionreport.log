@@ -1,0 +1,5 @@
+inspectionreport (Humpback): PASS - scenario completed
+START
+Damaged navterminal #254 after inspector entered compartment #564
+PASS native broken-device report targets equipment #254 in compartment #564
+COMPLETE

@@ -19,10 +19,9 @@ namespace EnhancedExperience
         private static readonly Identifier CellCharger = "batterycellrecharger".ToIdentifier();
         private static readonly Identifier TankRefiller = "oxygentankrefiller".ToIdentifier();
 
-        private sealed record Service(Item Item, ItemContainer Origin, ItemContainer Station,
-            Item Spare = null, PowerContainer Battery = null);
+        private sealed record Service(Item Item, ItemContainer Origin, ItemContainer Station, Item Spare = null);
 
-        private enum Stage { Start, CollectSpare, Load, Charging, Return, Recover, TuneBattery }
+        private enum Stage { Start, CollectSpare, Load, Charging, Return, Recover }
 
         private readonly Dictionary<Item, double> retryAfter = new();
         private double nextScan;
@@ -61,8 +60,7 @@ namespace EnhancedExperience
 
         protected override float GetPriority()
         {
-            if (!IsAllowed || character.CurrentHull == null || !character.IsOnPlayerTeam ||
-                objectiveManager.ForcedOrder != null || objectiveManager.CurrentOrder?.Priority > 0f)
+            if (!IsAllowed || !CrewRepairPriorities.Available(character) || HigherDuty())
             {
                 return 0f;
             }
@@ -100,19 +98,20 @@ namespace EnhancedExperience
                 deadline = now + 30d;
             }
 
-            if (objectiveManager.ForcedOrder != null || objectiveManager.CurrentOrder?.Priority > 0f)
+            if (HigherDuty())
             {
-                if (stage != Stage.Charging) { deadline += deltaTime; }
+                if (stage == Stage.Start || stage == Stage.CollectSpare && !service.Spare.IsOwnedBy(character) ||
+                    stage == Stage.Load && !service.Item.IsOwnedBy(character) &&
+                    (service.Station == null || service.Item.ParentInventory != service.Station.Inventory) &&
+                    service.Spare?.IsOwnedBy(character) != true)
+                {
+                    Finish(retry: false);
+                }
+                else if (stage != Stage.Charging) { deadline += deltaTime; }
                 return;
             }
 
             if (stage == Stage.Charging) { return; }
-            if (stage == Stage.TuneBattery && (!NeedsService(service.Battery.ChargePercentage) ||
-                service.Battery.RechargeRatio > 0f))
-            {
-                Finish(retry: false);
-                return;
-            }
             if (step?.Abandon == true || now >= deadline || !CanAccess(service.Item) ||
                 stage == Stage.CollectSpare && !CanAccess(service.Spare) ||
                 stage == Stage.Load && service.Station != null && !CanAccess(service.Station.Item))
@@ -137,21 +136,7 @@ namespace EnhancedExperience
             switch (stage)
             {
                 case Stage.Start:
-                    if (service.Battery is { } battery)
-                    {
-                        if (!NeedsService(battery.ChargePercentage) || battery.RechargeRatio > 0f)
-                        {
-                            Finish(retry: false);
-                            break;
-                        }
-                        BeginStep(Stage.TuneBattery, new AIObjectiveOperateItem(battery, character, objectiveManager,
-                            "charge".ToIdentifier(), false, null)
-                        {
-                            Override = true,
-                            completionCondition = () => battery.RechargeRatio > 0f
-                        });
-                    }
-                    else if (!NeedsService(item.ConditionPercentage))
+                    if (!NeedsService(item.ConditionPercentage))
                     {
                         Finish(retry: false);
                     }
@@ -214,9 +199,6 @@ namespace EnhancedExperience
                     Finish(retry: true);
                     break;
 
-                case Stage.TuneBattery:
-                    Finish(retry: service.Battery.RechargeRatio <= 0f);
-                    break;
             }
         }
 
@@ -277,6 +259,10 @@ namespace EnhancedExperience
             nextScan = Timing.TotalTimeUnpaused + 1d;
         }
 
+        private bool HigherDuty() =>
+            !CrewRepairPriorities.CanTakeDuty(objectiveManager, emergency: false) ||
+            SecurityDefense.HasDefenseDuty(character) || CrewRepairPriorities.HasRepairDuty(character);
+
         private Service FindService()
         {
             var submarine = character.Submarine;
@@ -289,10 +275,14 @@ namespace EnhancedExperience
                 retryAfter.Remove(item);
             }
 
-            var otherJobs = Character.CharacterList.Where(crew => crew != character && !crew.IsDead &&
-                    crew.TeamID == character.TeamID && crew.AIController is HumanAIController)
-                .Select(crew => ((HumanAIController)crew.AIController).ObjectiveManager.GetObjective<MaintenancePatrol>()?.service)
-                .Where(job => job != null).ToArray();
+            var otherJobs = new List<Service>();
+            foreach (var crew in Character.CharacterList)
+            {
+                if (crew == character || crew.TeamID != character.TeamID || crew.AIController is not HumanAIController ai ||
+                    ai.ObjectiveManager.GetObjective<MaintenancePatrol>() is not { service: { } job } patrol) { continue; }
+                if (CrewRepairPriorities.Available(crew)) { otherJobs.Add(job); }
+                else { patrol.Finish(retry: false); }
+            }
             var reserved = new HashSet<Item>(otherJobs.SelectMany(job => new[] { job.Item, job.Spare }));
             var occupiedStations = new HashSet<ItemContainer>(otherJobs.Select(job => job.Station));
             var connected = new HashSet<Submarine>(submarine.GetConnectedSubs()) { submarine };
@@ -305,18 +295,11 @@ namespace EnhancedExperience
                 .Where(container => !occupiedStations.Contains(container) && CanUse(container)).ToArray();
 
             foreach (var item in items.Where(item => !reserved.Contains(item) && !retryAfter.ContainsKey(item) &&
-                    (IsPortableResource(item) || item.GetComponent<PowerContainer>() != null))
+                    IsPortableResource(item))
                 .OrderBy(item => Vector2.DistanceSquared(character.WorldPosition, item.WorldPosition)))
             {
                 if (!CanAccess(item)) { continue; }
-                if (item.GetComponent<PowerContainer>() is { } battery && item.ParentInventory == null &&
-                    item.Condition > 0f && !battery.OutputDisabled && battery.MaxRechargeSpeed > 0f &&
-                    battery.RechargeRatio <= 0f && NeedsService(battery.ChargePercentage))
-                {
-                    return new Service(item, null, null, Battery: battery);
-                }
-
-                if (!IsPortableResource(item) || !NeedsService(item.ConditionPercentage) ||
+                if (!NeedsService(item.ConditionPercentage) ||
                     item.GetComponent<Pickable>() is not { IsAttached: false, CanBePicked: true }) { continue; }
 
                 var origin = (item.ParentInventory as ItemInventory)?.Container;
@@ -332,7 +315,7 @@ namespace EnhancedExperience
                     if (spare != null) { return new Service(item, origin, station, spare); }
                 }
 
-                // Some resources, such as vanilla welding fuel, can only be replaced.
+                // A compatible full spare can replace a resource when no station is available.
                 if (origin == null || !IsEquipment(origin.Item)) { continue; }
                 var replacement = items.FirstOrDefault(candidate => candidate.Prefab == item.Prefab &&
                     candidate.IsFullCondition && candidate.Container != origin.Item && !reserved.Contains(candidate) &&
@@ -350,8 +333,9 @@ namespace EnhancedExperience
         }
 
         private static bool IsPortableResource(Item item) => !item.HasTag(ReactorFuel) &&
-            !item.HasTag(AmmoBox) && item.GetComponent<Projectile>() == null &&
-            (item.HasTag(Cell) || item.HasTag(Oxygen) || item.HasTag(RefillableOxygen) || item.HasTag(Welding));
+            !item.HasTag(AmmoBox) && !item.HasTag(Welding) && item.GetComponent<Projectile>() == null &&
+            item.GetComponent<PowerContainer>() == null &&
+            (item.HasTag(Cell) || item.HasTag(Oxygen) || item.HasTag(RefillableOxygen));
 
         private static bool IsEquipment(Item item) => !item.HasTag(Crate) &&
             (item.GetComponent<Holdable>() != null || item.GetComponent<Wearable>() != null);
@@ -359,7 +343,7 @@ namespace EnhancedExperience
         private static bool IsStationFor(ItemContainer container, Item item) =>
             item.HasTag(Cell) && container.Item.HasTag(CellCharger) ||
             container.Item.HasTag(TankRefiller) && (item.HasTag(RefillableOxygen) ||
-                (item.HasTag(Oxygen) || item.HasTag(Welding)) &&
+                item.HasTag(Oxygen) &&
                 container.ContainableItems.Concat(container.AllSubContainableItems).Any(rule =>
                     rule.MatchesItem(item.Prefab) && rule.StatusEffects?.Any(effect =>
                         effect.type == ActionType.OnContaining && effect.MatchesTagConditionals(item.Prefab) &&

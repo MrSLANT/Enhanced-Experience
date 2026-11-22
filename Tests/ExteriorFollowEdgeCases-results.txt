@@ -1,6 +1,9 @@
 Quickstart and crew: PASS (Engineer)
-Two bots simultaneously pick distinct plants: FAIL (nil / Aquatic Poppy (ID: 11956), oxygen=100/100, second target distance=68/19)
-Each bot keeps one plant: FAIL
-Bot gathers before simulated oxygen emergency: PASS (follow (Human), player=Aquatic Poppy (ID: 11966), bot=Sea Yeast Shroom (ID: 11967))
-Low oxygen cancels active gathering: PASS (oxygen=19.4, supply=20.8, find safety)
+Two bots simultaneously pick distinct plants: PASS (Sea Yeast Shroom (ID: 12762) / Slime Bacteria (ID: 12763), oxygen=100/100, second target distance=119/13)
+Each bot keeps one plant: PASS (Human / Human, still picking=nil / nil)
+Player starts the single-plant scenario: PASS (Aquatic Poppy (ID: 12764))
+Only one bot picks the sole available plant: PASS (Sea Yeast Shroom (ID: 12765) / nil)
+A bot retains the sole available plant: PASS
+Bot gathers before simulated oxygen emergency: PASS (follow (Human), player=Aquatic Poppy (ID: 12766), bot=Sea Yeast Shroom (ID: 12767))
+Low oxygen cancels active gathering: PASS (oxygen=19.4, supply=20.8, follow (Human))
 Native survival objective takes over: PASS (find safety)

@@ -1,0 +1,5 @@
+inspection (Humpback): PASS - scenario completed
+START
+PASS specialist visits another compartment during inspection
+PASS direct Wait interrupts inspection
+COMPLETE

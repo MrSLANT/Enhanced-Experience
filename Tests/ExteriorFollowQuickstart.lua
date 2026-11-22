@@ -4,11 +4,12 @@ local edgeCases = ExteriorFollowEdgeCases == true
 ExteriorFollowEdgeCases = nil
 local resultFile = edgeCases and "ExteriorFollowEdgeCases-results.txt" or "ExteriorFollowQuickstart-results.txt"
 local results = {}
+local writeResult = EnhancedExperienceQuickstartWriteResult or File.Write
 local function report(name, pass, detail)
     local line = name .. ": " .. (pass and "PASS" or "FAIL") .. (detail and " (" .. detail .. ")" or "")
     results[#results + 1] = line
     print("[Exterior follow] " .. line)
-    File.Write(root .. resultFile, table.concat(results, "\n") .. "\n")
+    writeResult(root .. resultFile, table.concat(results, "\n") .. "\n")
 end
 local function guard(fn)
     return function(...)
@@ -159,6 +160,8 @@ local function mining()
                             if remaining > 0 then after(200, function() cutFor(remaining - 1) end) end
                         end
                         after(800, function()
+                            move(leader, offset(source.WorldPosition, 18, -10))
+                            move(bot, offset(other.WorldPosition, -15, 12))
                             cutFor(24)
                             after(1000, function()
                                 report("Native ore hit advances player deposit", playerOre.DeattachTimer > 0 or
@@ -167,7 +170,8 @@ local function mining()
                             after(8500, function()
                                 report("Bot cuts and retains a different ore", other.ParentInventory == bot.Inventory and
                                     fuel.Condition < fuelBefore, "attached=" .. tostring(botOre.Attached) ..
-                                    ", progress=" .. tostring(botOre.DeattachTimer) .. ", fuel=" .. tostring(fuel.Condition))
+                                    ", progress=" .. tostring(botOre.DeattachTimer) .. ", fuel=" .. tostring(fuel.Condition) ..
+                                    ", objective=" .. current() .. ", distance=" .. string.format("%.0f", distance(bot, other)))
                                 base = offset(base, 300, 0)
                                 plants()
                             end)
@@ -219,6 +223,39 @@ local function testOxygen()
     end)
 end
 
+local function testSinglePlant()
+    base = offset(base, 520, 0)
+    move(leader, base)
+    move(bot, offset(base, -12, -68))
+    move(second, offset(base, 12, -68))
+    specimen("aquaticpoppy", offset(base, 0, -12), function(source)
+        specimen("yeastshroom", offset(base, 0, -82), function(plant)
+            after(1200, function()
+                move(leader, offset(source.WorldPosition, -15, 10))
+                move(bot, offset(plant.WorldPosition, -12, 12))
+                move(second, offset(plant.WorldPosition, 12, 12))
+                bot.Oxygen, second.Oxygen = 100, 100
+                source.TryInteract(leader, false, true, false)
+                after(250, function()
+                    report("Player starts the single-plant scenario", leader.PickingItem == source, tostring(leader.PickingItem))
+                end)
+                after(2000, function()
+                    local a, b = bot.PickingItem, second.PickingItem
+                    report("Only one bot picks the sole available plant",
+                        (a == plant and b == nil) or (b == plant and a == nil),
+                        tostring(a) .. " / " .. tostring(b))
+                end)
+                after(7900, function()
+                    local owner = plant.ParentInventory
+                    report("A bot retains the sole available plant", owner == bot.Inventory or owner == second.Inventory)
+                    second.SetOrder(order.GetDismissal(), true, false, true)
+                    testOxygen()
+                end)
+            end)
+        end)
+    end)
+end
+
 local function testCompetition()
     assert(second, "Need two crew bots")
     wearer(second, function()
@@ -228,11 +265,11 @@ local function testCompetition()
         move(second, offset(base, 10, -70))
         specimen("aquaticpoppy", offset(base, 0, -12), function(source)
             specimen("yeastshroom", offset(base, 0, -82), function(first)
-                specimen("slimebacteria", offset(base, 24, -80), function(other)
+                specimen("slimebacteria", offset(base, 110, -80), function(other)
                     after(1400, function()
                         move(leader, offset(source.WorldPosition, -15, 10))
                         move(bot, offset(first.WorldPosition, -8, 12))
-                        move(second, offset(first.WorldPosition, 8, 12))
+                        move(second, offset(other.WorldPosition, 8, 12))
                         bot.Oxygen, second.Oxygen = 100, 100
                         source.TryInteract(leader, false, true, false)
                         after(2000, function()
@@ -247,8 +284,10 @@ local function testCompetition()
                             local a, b = first.ParentInventory, other.ParentInventory
                             report("Each bot keeps one plant",
                                 (a == bot.Inventory and b == second.Inventory) or
-                                (a == second.Inventory and b == bot.Inventory))
-                            testOxygen()
+                                (a == second.Inventory and b == bot.Inventory),
+                                tostring(a and a.Owner) .. " / " .. tostring(b and b.Owner) ..
+                                ", still picking=" .. tostring(bot.PickingItem) .. " / " .. tostring(second.PickingItem))
+                            testSinglePlant()
                         end)
                     end)
                 end)

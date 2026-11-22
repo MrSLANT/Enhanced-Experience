@@ -1,0 +1,9 @@
+handoffunconscious (Humpback): PASS - scenario completed
+START
+Opened leak 79/1
+PASS mechanic owns the active leak repair
+Original mechanic after fixture: vitality 0.0, unconscious=true, dead=false
+PASS original mechanic is unconscious and alive
+PASS another bot takes ownership of the same leak
+PASS replacement bot closes the leak
+COMPLETE

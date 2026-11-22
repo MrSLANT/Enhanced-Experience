@@ -433,7 +433,7 @@ namespace EnhancedExperience
 
                 if (Resource == null)
                 {
-                    if (Now < scanResources) { return false; }
+                    if (Now >= activityUntil || Now < scanResources) { return false; }
                     scanResources = Now + 1;
                     if (!harvestPlants && FindCutter() == null &&
                         (FindCutter(allowEmpty: true) == null || SpareCutterFuel() == null)) { return false; }
@@ -443,7 +443,7 @@ namespace EnhancedExperience
                 }
 
                 Item item = Resource;
-                if (Now >= giveUp || item == playerResource || !OutsideResource(item) ||
+                if (Now >= giveUp || IsLeaderResource(item) || !OutsideResource(item) ||
                     !Within(item, leader, ResourceRadius) || StorageSlot(item) < 0)
                 {
                     Release(retry: true);
@@ -544,6 +544,8 @@ namespace EnhancedExperience
                 item.ParentInventory == null && item.Condition > 0 &&
                 item.GetComponent<LevelResource>() != null;
 
+            private bool IsLeaderResource(Item item) => item == playerResource || item == leader.PickingItem;
+
             private Item FindResource()
             {
                 foreach (Item item in unavailable.Where(entry => entry.Value <= Now || entry.Key.Removed)
@@ -552,12 +554,12 @@ namespace EnhancedExperience
                     unavailable.Remove(item);
                 }
                 var reserved = Escorts.Where(entry => entry.Value != this && entry.Value.Resource != null &&
-                    entry.Value.IsActive).Select(entry => entry.Value.Resource).ToHashSet();
+                    entry.Key is { Removed: false, IsDead: false }).Select(entry => entry.Value.Resource).ToHashSet();
                 Item best = null;
                 float bestDistance = float.PositiveInfinity;
                 foreach (Item item in Item.ItemList)
                 {
-                    if (item == playerResource || !Within(item, leader, ResourceRadius) ||
+                    if (IsLeaderResource(item) || !Within(item, leader, ResourceRadius) ||
                         !OutsideResource(item) || !item.HasTag(harvestPlants ? "plant" : "ore") ||
                         reserved.Contains(item) || unavailable.ContainsKey(item) ||
                         !item.IsInteractable(Bot) || StorageSlot(item) < 0) { continue; }

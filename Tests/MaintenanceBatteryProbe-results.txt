@@ -1,56 +1,29 @@
 START
-0s battery/411 61.4% rate=50.0% max=800.0 outputDisabled=false access=true hull=Barotrauma.Hull (Backup power array, 1)
-0s battery/412 61.4% rate=50.0% max=800.0 outputDisabled=false access=true hull=Barotrauma.Hull (Backup power array, 1)
-0s supercapacitor/1356 100.0% rate=40.0% max=1000.0 outputDisabled=false access=true hull=Barotrauma.Hull (Electrical, 1)
-0s supercapacitor/1357 100.0% rate=40.0% max=1000.0 outputDisabled=false access=true hull=Barotrauma.Hull (Electrical, 1)
-0s supercapacitor/1358 100.0% rate=40.0% max=1000.0 outputDisabled=false access=true hull=Barotrauma.Hull (Electrical, 1)
-0s battery/1795 82.2% rate=100.0% max=30.0 outputDisabled=false access=false hull=-
-0s battery/1821 82.2% rate=100.0% max=30.0 outputDisabled=false access=false hull=-
-0s battery/2345 99.1% rate=100.0% max=1200.0 outputDisabled=false access=false hull=-
-0s battery/3181 99.8% rate=100.0% max=500.0 outputDisabled=false access=false hull=Barotrauma.Hull (Command room, 1)
-0s supercapacitor/3246 0.0% rate=0.0% max=1.1 outputDisabled=false access=false hull=Barotrauma.Hull (Command room, 1)
-0s supercapacitor/3247 50.0% rate=0.0% max=1.1 outputDisabled=false access=false hull=Barotrauma.Hull (Command room, 1)
-5s battery/411 63.5% rate=50.0% max=800.0 outputDisabled=false access=true hull=Barotrauma.Hull (Backup power array, 1)
-5s battery/412 63.5% rate=50.0% max=800.0 outputDisabled=false access=true hull=Barotrauma.Hull (Backup power array, 1)
-5s supercapacitor/1356 100.0% rate=40.0% max=1000.0 outputDisabled=false access=true hull=Barotrauma.Hull (Electrical, 1)
-5s supercapacitor/1357 100.0% rate=40.0% max=1000.0 outputDisabled=false access=true hull=Barotrauma.Hull (Electrical, 1)
-5s supercapacitor/1358 100.0% rate=40.0% max=1000.0 outputDisabled=false access=true hull=Barotrauma.Hull (Electrical, 1)
-5s battery/1795 82.3% rate=100.0% max=30.0 outputDisabled=false access=false hull=-
-5s battery/1821 82.3% rate=100.0% max=30.0 outputDisabled=false access=false hull=-
-5s battery/2345 99.1% rate=100.0% max=1200.0 outputDisabled=false access=false hull=-
-5s battery/3181 99.8% rate=100.0% max=500.0 outputDisabled=false access=false hull=Barotrauma.Hull (Command room, 1)
-5s supercapacitor/3246 0.0% rate=0.0% max=1.1 outputDisabled=false access=false hull=Barotrauma.Hull (Command room, 1)
-5s supercapacitor/3247 50.0% rate=0.0% max=1.1 outputDisabled=false access=false hull=Barotrauma.Hull (Command room, 1)
-10s battery/411 65.5% rate=50.0% max=800.0 outputDisabled=false access=true hull=Barotrauma.Hull (Backup power array, 1)
-10s battery/412 65.5% rate=50.0% max=800.0 outputDisabled=false access=true hull=Barotrauma.Hull (Backup power array, 1)
-10s supercapacitor/1356 100.0% rate=40.0% max=1000.0 outputDisabled=false access=true hull=Barotrauma.Hull (Electrical, 1)
-10s supercapacitor/1357 100.0% rate=40.0% max=1000.0 outputDisabled=false access=true hull=Barotrauma.Hull (Electrical, 1)
-10s supercapacitor/1358 100.0% rate=40.0% max=1000.0 outputDisabled=false access=true hull=Barotrauma.Hull (Electrical, 1)
-10s battery/1795 82.3% rate=100.0% max=30.0 outputDisabled=false access=false hull=-
-10s battery/1821 82.3% rate=100.0% max=30.0 outputDisabled=false access=false hull=-
-10s battery/2345 99.1% rate=100.0% max=1200.0 outputDisabled=false access=false hull=-
-10s battery/3181 99.8% rate=100.0% max=500.0 outputDisabled=false access=false hull=Barotrauma.Hull (Command room, 1)
-10s supercapacitor/3246 0.0% rate=0.0% max=1.1 outputDisabled=false access=false hull=Barotrauma.Hull (Command room, 1)
-10s supercapacitor/3247 50.0% rate=0.0% max=1.1 outputDisabled=false access=false hull=Barotrauma.Hull (Command room, 1)
-15s battery/411 67.6% rate=50.0% max=800.0 outputDisabled=false access=true hull=Barotrauma.Hull (Backup power array, 1)
-15s battery/412 67.6% rate=50.0% max=800.0 outputDisabled=false access=true hull=Barotrauma.Hull (Backup power array, 1)
-15s supercapacitor/1356 100.0% rate=40.0% max=1000.0 outputDisabled=false access=true hull=Barotrauma.Hull (Electrical, 1)
-15s supercapacitor/1357 100.0% rate=40.0% max=1000.0 outputDisabled=false access=true hull=Barotrauma.Hull (Electrical, 1)
-15s supercapacitor/1358 100.0% rate=40.0% max=1000.0 outputDisabled=false access=true hull=Barotrauma.Hull (Electrical, 1)
-15s battery/1795 82.2% rate=100.0% max=30.0 outputDisabled=false access=false hull=-
-15s battery/1821 82.2% rate=100.0% max=30.0 outputDisabled=false access=false hull=-
-15s battery/2345 99.1% rate=100.0% max=1200.0 outputDisabled=false access=false hull=-
-15s battery/3181 99.8% rate=100.0% max=500.0 outputDisabled=false access=false hull=Barotrauma.Hull (Command room, 1)
-15s supercapacitor/3246 0.0% rate=0.0% max=1.1 outputDisabled=false access=false hull=Barotrauma.Hull (Command room, 1)
-15s supercapacitor/3247 50.0% rate=0.0% max=1.1 outputDisabled=false access=false hull=Barotrauma.Hull (Command room, 1)
-20s battery/411 69.7% rate=50.0% max=800.0 outputDisabled=false access=true hull=Barotrauma.Hull (Backup power array, 1)
-20s battery/412 69.7% rate=50.0% max=800.0 outputDisabled=false access=true hull=Barotrauma.Hull (Backup power array, 1)
-20s supercapacitor/1356 100.0% rate=40.0% max=1000.0 outputDisabled=false access=true hull=Barotrauma.Hull (Electrical, 1)
-20s supercapacitor/1357 100.0% rate=40.0% max=1000.0 outputDisabled=false access=true hull=Barotrauma.Hull (Electrical, 1)
-20s supercapacitor/1358 100.0% rate=40.0% max=1000.0 outputDisabled=false access=true hull=Barotrauma.Hull (Electrical, 1)
-20s battery/1795 82.3% rate=100.0% max=30.0 outputDisabled=false access=false hull=-
-20s battery/1821 82.3% rate=100.0% max=30.0 outputDisabled=false access=false hull=-
-20s battery/2345 99.1% rate=100.0% max=1200.0 outputDisabled=false access=false hull=-
-20s battery/3181 99.8% rate=100.0% max=500.0 outputDisabled=false access=false hull=Barotrauma.Hull (Command room, 1)
-20s supercapacitor/3246 0.0% rate=0.0% max=1.1 outputDisabled=false access=false hull=Barotrauma.Hull (Command room, 1)
-20s supercapacitor/3247 50.0% rate=0.0% max=1.1 outputDisabled=false access=false hull=Barotrauma.Hull (Command room, 1)
+Testing battery 411
+Disconnected test battery rate input: 0 wire(s)
+0s 50.0% rate=0.0% access=true | AI idle
+5s 50.0% rate=0.0% access=true | AI maintenancepatrol
+10s 50.0% rate=0.0% access=true | AI maintenancepatrol
+15s 50.0% rate=0.0% access=true | AI maintenancepatrol
+20s 51.0% rate=50.0% access=true | AI idle
+25s 52.9% rate=50.0% access=true | AI idle
+30s 54.8% rate=50.0% access=true | AI idle
+35s 56.6% rate=50.0% access=true | AI idle
+40s 58.5% rate=50.0% access=true | AI idle
+45s 60.4% rate=50.0% access=true | AI idle
+50s 62.3% rate=50.0% access=true | AI idle
+55s 64.2% rate=50.0% access=true | AI idle
+60s 66.1% rate=50.0% access=true | AI idle
+65s 67.9% rate=50.0% access=true | AI idle
+70s 70.0% rate=50.0% access=true | AI idle
+75s 72.1% rate=50.0% access=true | AI idle
+80s 74.2% rate=50.0% access=true | AI idle
+85s 76.3% rate=50.0% access=true | AI idle
+90s 78.4% rate=50.0% access=true | AI idle
+95s 80.5% rate=50.0% access=true | AI idle
+100s 82.6% rate=50.0% access=true | AI idle
+105s 84.7% rate=50.0% access=true | AI idle
+110s 86.8% rate=50.0% access=true | AI idle
+115s 88.9% rate=50.0% access=true | AI idle
+120s 90.9% rate=50.0% access=true | AI idle
+FAIL

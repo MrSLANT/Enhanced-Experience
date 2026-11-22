@@ -82,11 +82,17 @@ namespace EnhancedExperience
         }
 
         private static bool HasOrders(AIObjectiveManager manager) =>
-            manager.ForcedOrder != null || manager.CurrentOrder?.Priority > 0f;
+            CrewRepairPriorities.HasOrders(manager);
 
         private static bool Eligible(Character officer) =>
-            !officer.IsPlayer && !officer.IsIncapacitated && !officer.LockHands &&
-            CrewRepairPriorities.AppliesTo(officer) && officer.Info?.Job?.Prefab.Identifier == "securityofficer";
+            CrewRepairPriorities.Available(officer) && officer.Info?.Job?.Prefab.Identifier == "securityofficer";
+
+        internal static bool HasDefenseDuty(Character officer)
+        {
+            if (!Eligible(officer) || officer.CurrentHull?.Submarine is not { } submarine) { return false; }
+            var plan = PlanFor(submarine);
+            return plan.Intruders.ContainsKey(officer) || plan.Weapons.ContainsKey(officer);
+        }
 
         private static DefensePlan PlanFor(Submarine submarine)
         {
@@ -121,9 +127,9 @@ namespace EnhancedExperience
             }
 
             var characters = Character.CharacterList;
-            var officers = characters.Where(officer => officer.Submarine == submarine && Eligible(officer) &&
-                officer.AIController is HumanAIController ai && !HasOrders(ai.ObjectiveManager) &&
-                ai.ObjectiveManager.CurrentObjective is not AIObjectiveFindSafety { Priority: > 60f } &&
+            var officers = characters.Where(officer => officer.CurrentHull?.Submarine == submarine && Eligible(officer) &&
+                officer.AIController is HumanAIController ai &&
+                CrewRepairPriorities.CanTakeDuty(ai.ObjectiveManager, emergency: true) &&
                 ai.ObjectiveManager.GetObjective<SecurityDefense>() != null).OrderBy(officer => officer.ID).ToList();
             if (officers.Count == 0 || submarine.Info.IsOutpost) { return; }
 
@@ -148,7 +154,8 @@ namespace EnhancedExperience
             if (threats.Count > 0)
             {
                 var stations = Item.ItemList.Where(item => item.Submarine == submarine && !item.Removed &&
-                        item.Condition > 0f && !IsRailgun(item.Prefab.Identifier, item.Prefab.VariantOf))
+                        item.Condition > 0f && !item.HasTag("hardpoint".ToIdentifier()) &&
+                        !IsRailgun(item.Prefab.Identifier, item.Prefab.VariantOf))
                     .Select(item => item.GetComponent<Turret>()).Where(turret => turret != null)
                     .Select(turret => (Turret: turret, Controller: turret.Item.FindController(PeriscopeTags)))
                     .Where(pair => pair.Controller?.Item is { Removed: false, Condition: > 0f } controller &&
@@ -162,7 +169,9 @@ namespace EnhancedExperience
                     foreach (var officer in officers)
                     {
                         var defense = ((HumanAIController)officer.AIController).ObjectiveManager.GetObjective<SecurityDefense>();
-                        if (!station.Controller.Item.HasAccess(officer) || StationOccupied(station, officer) ||
+                        if (HasOrders(defense.objectiveManager) || !station.Turret.Item.IsInteractable(officer) ||
+                            !station.Controller.Item.IsInteractable(officer) ||
+                            !station.Controller.Item.HasAccess(officer) || StationOccupied(station, officer) ||
                             defense.retryAfter.TryGetValue(station.Turret, out double retry) && retry > now) { continue; }
 
                         foreach (var target in visibleTargets)
@@ -201,8 +210,11 @@ namespace EnhancedExperience
             }
 
             bool canCoverOutside = candidates.Count > 0;
-            int insideSlots = IntruderSlots(officers.Count, intruders.Count, canCoverOutside);
-            if (officers.Count > 1 && intruders.Count > 0 && canCoverOutside) { AssignWeapon(); }
+            int insideSlots = Math.Min(officers.Count, intruders.Count);
+            if (officers.Count > 1 && intruders.Count > 0 && canCoverOutside && AssignWeapon())
+            {
+                insideSlots = Math.Min(officers.Count, intruders.Count);
+            }
             for (int i = 0; i < insideSlots; i++)
             {
                 var choice = (from intruder in intruders
@@ -210,7 +222,8 @@ namespace EnhancedExperience
                               where AIObjectiveFightIntruders.IsValidTarget(intruder, officer, false)
                               where ((HumanAIController)officer.AIController).ObjectiveManager
                                   .GetObjective<IntruderDefense>()?.CanHandle(intruder) == true
-                              orderby Vector2.DistanceSquared(officer.WorldPosition, intruder.WorldPosition) *
+                              orderby HasOrders(((HumanAIController)officer.AIController).ObjectiveManager),
+                                  Vector2.DistanceSquared(officer.WorldPosition, intruder.WorldPosition) *
                                   (previousIntruders.Any(pair => pair.Key == officer && pair.Value == intruder) ? 0.5f : 1f)
                               select (officer, intruder)).FirstOrDefault();
                 if (choice.officer == null) { break; }
@@ -313,7 +326,7 @@ namespace EnhancedExperience
                 StopOperation();
                 return 0f;
             }
-            if (operation?.Turret != assignment.Station.Turret)
+            if (operation?.Turret != assignment.Station.Turret || operation.Controller != assignment.Station.Controller)
             {
                 StopOperation();
                 operation = new WeaponOperation(character, objectiveManager, assignment);
@@ -326,7 +339,10 @@ namespace EnhancedExperience
         private void StopOperation()
         {
             if (operation == null) { return; }
-            if (character.SelectedItem == operation.Controller.Item) { character.SelectedItem = null; }
+            if (objectiveManager.CurrentObjective == this && character.SelectedItem == operation.Controller.Item)
+            {
+                character.SelectedItem = null;
+            }
             RemoveSubObjective(ref operation);
         }
 
@@ -369,31 +385,47 @@ namespace EnhancedExperience
                 Identifier = "fightintruders".ToIdentifier();
             }
 
+            private Character selected;
+
             internal bool CanHandle(Character target) => !ignoreList.Contains(target);
 
             protected override void FindTargets()
             {
-                if (character.Submarine is { } submarine &&
-                    PlanFor(submarine).Intruders.TryGetValue(character, out var intruder) &&
-                    !ignoreList.Contains(intruder) && IsValidTarget(intruder))
-                {
-                    Targets.Add(intruder);
-                }
+                if (selected != null && CanHandle(selected) && IsValidTarget(selected)) { Targets.Add(selected); }
             }
 
-            protected override float GetPriority() =>
-                IsAllowed && !HasOrders(objectiveManager) &&
-                character.Submarine is { } submarine &&
-                PlanFor(submarine).Intruders.TryGetValue(character, out var intruder) &&
-                Targets.Contains(intruder) && !ignoreList.Contains(intruder) && IsValidTarget(intruder)
-                    ? AIObjectiveManager.LowestOrderPriority - 0.25f
-                    : 0f;
+            public override void Reset()
+            {
+                Objectives.Clear();
+                base.Reset();
+            }
+
+            protected override float GetPriority()
+            {
+                bool available = IsAllowed && Eligible(character) &&
+                    CrewRepairPriorities.CanTakeDuty(objectiveManager, emergency: true);
+                Character target = null;
+                if (available && character.CurrentHull?.Submarine is { } submarine &&
+                    PlanFor(submarine).Intruders.TryGetValue(character, out var intruder) &&
+                    intruder.CurrentHull?.Submarine == submarine && CanHandle(intruder) && IsValidTarget(intruder))
+                {
+                    target = intruder;
+                }
+                if (selected != target)
+                {
+                    selected = target;
+                    subObjectives.Clear();
+                    Objectives.Clear();
+                    UpdateTargets();
+                }
+                return target == null ? 0f : AIObjectiveManager.EmergencyObjectivePriority - 1f;
+            }
         }
 
         private static bool KeepDefenseAssignment(HumanAIController __instance)
         {
             var officer = __instance.Character;
-            if (!Eligible(officer) || officer.Submarine is not { } submarine ||
+            if (!Eligible(officer) || officer.CurrentHull?.Submarine is not { } submarine ||
                 __instance.ObjectiveManager.GetObjective<SecurityDefense>() == null) { return true; }
             if (HasOrders(__instance.ObjectiveManager)) { return false; }
             var plan = PlanFor(submarine);

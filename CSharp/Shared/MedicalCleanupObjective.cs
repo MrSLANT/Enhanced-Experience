@@ -72,6 +72,19 @@ namespace EnhancedExperience
 
         protected override bool IsValidTarget(Item target) => IsValidTarget(target, requireDestination: true);
 
+        private IEnumerable<Item> RemainingWork() =>
+            GetList().Where(item => IsValidTarget(item, requireDestination: false));
+
+        internal Item[] GetRemainingWorkForTest() => RemainingWork().ToArray();
+
+        internal string DescribeRemainingWork()
+        {
+            var pending = RemainingWork().Take(8)
+                .Select(item => $"{item.Prefab.Identifier}#{item.ID} in {item.Container?.Prefab.Identifier.ToString() ?? "no container"}");
+            return $"allowed={IsAllowed}, safe={IsSafe(character.CurrentHull)}, children={SubObjectives.Count()}, " +
+                $"pending=[{string.Join(", ", pending)}]";
+        }
+
         private bool IsValidTarget(Item target, bool requireDestination)
         {
             if (target.Removed || target.ParentInventory?.Locked == true || target.GetRootInventoryOwner() is Character owner && owner != character)
@@ -82,7 +95,11 @@ namespace EnhancedExperience
             var storage = Classify(target);
             if (storage != Storage.Vanilla && target.Container != null && !target.IsOwnedBy(character))
             {
-                if (CabinetType(target.Container) == storage && Objectives.ContainsKey(target)) { return true; }
+                if (CabinetType(target.Container) == storage)
+                {
+                    // Keep an existing child long enough to finish its deposit callback.
+                    return requireDestination && Objectives.ContainsKey(target);
+                }
                 return CanCollectFromStorage(target, storage) &&
                     (!requireDestination || Objectives.ContainsKey(target) || CanPutInInventory(character, target, allowWearing: false) &&
                         FindCabinet(target, storage) != null);
@@ -195,8 +212,7 @@ namespace EnhancedExperience
             if (IsAllowed && now >= nextCompletionCheck && objectiveManager.IsOrder(this))
             {
                 nextCompletionCheck = now + 2;
-                if (Targets.Count == 0 && !SubObjectives.Any() &&
-                    !GetList().Any(item => IsValidTarget(item, requireDestination: false)))
+                if (!SubObjectives.Any() && !RemainingWork().Any())
                 {
                     DismissEmptyOrder(this);
                 }
@@ -247,6 +263,11 @@ namespace EnhancedExperience
 
             protected override bool CheckObjectiveState()
             {
+                if (item.Container is Item cabinet && CabinetType(cabinet) == storage &&
+                    !item.IsOwnedBy(character))
+                {
+                    return true;
+                }
                 if (!requiresCabinet) { return base.CheckObjectiveState(); }
                 if (IsCompleted) { return true; }
                 if (!item.IsOwnedBy(character) && !parent.CanCollectFromStorage(item, storage))
